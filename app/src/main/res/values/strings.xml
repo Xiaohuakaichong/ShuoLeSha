@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">说了啥</string>
+    <string name="accessibility_service_description">说了啥需要无障碍服务权限来拦截音量键组合，实现息屏盲操录音功能。</string>
+</resources>
