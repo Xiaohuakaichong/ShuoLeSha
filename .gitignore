@@ -17,4 +17,6 @@ local.properties
 venv/
 __pycache__/
 build/
+dist/
+*.apk
 node_modules/

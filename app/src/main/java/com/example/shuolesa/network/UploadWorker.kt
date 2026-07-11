@@ -40,7 +40,7 @@ class UploadWorker(
             return Result.success()
         }
 
-        val pendingRecords = repository.getPendingUploads()
+        val pendingRecords = repository.getPendingUploads(MAX_RETRIES)
         if (pendingRecords.isEmpty()) {
             Log.d(TAG, "No pending uploads")
             return Result.success()
@@ -73,9 +73,16 @@ class UploadWorker(
                     if (!responseStr.isNullOrBlank()) {
                         try {
                             val json = org.json.JSONObject(responseStr)
-                            trans = json.optString("transcription").takeIf { it.isNotEmpty() }
-                            agentRes = json.optString("agentResult").takeIf { it.isNotEmpty() }
-                                ?: json.optString("result").takeIf { it.isNotEmpty() }
+                            // Workflow may return nested JSON string in "data"
+                            val payload = try {
+                                val inner = org.json.JSONObject(responseStr)
+                                inner
+                            } catch (_: Exception) {
+                                json
+                            }
+                            trans = payload.optString("transcription").takeIf { it.isNotEmpty() }
+                            agentRes = payload.optString("agentResult").takeIf { it.isNotEmpty() }
+                                ?: payload.optString("result").takeIf { it.isNotEmpty() }
                         } catch (_: Exception) {
                             agentRes = responseStr
                         }

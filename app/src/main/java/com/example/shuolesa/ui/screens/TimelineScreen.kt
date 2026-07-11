@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,31 +25,33 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import com.example.shuolesa.data.db.AudioRecordEntity
+import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
-import com.example.shuolesa.theme.NeonGreen
+import com.example.shuolesa.theme.Dimens
 import com.example.shuolesa.theme.PureBlack
-import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextSecondary
+import com.example.shuolesa.ui.components.EmptyState
+import com.example.shuolesa.ui.components.PageHeader
 import com.example.shuolesa.ui.components.TimelineItem
 
 /**
- * Page 2: Memory Timeline — shows pending and uploaded audio records.
+ * 记忆时间线：待处理与已上传录音。
  */
 @Composable
 fun TimelineScreen(
     repository: AudioRepository,
+    prefs: AppPreferences,
     onRecordClick: (AudioRecordEntity) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val allRecords by repository.observeAllRecords().collectAsState(initial = emptyList())
+    val triggerDuration by prefs.triggerDuration.collectAsState(initial = 3)
 
     val pendingRecords = allRecords.filter {
         it.status == AudioRecordEntity.STATUS_PENDING ||
-        it.status == AudioRecordEntity.STATUS_UPLOADING ||
-        it.status == AudioRecordEntity.STATUS_FAILED
+            it.status == AudioRecordEntity.STATUS_UPLOADING ||
+            it.status == AudioRecordEntity.STATUS_FAILED
     }
     val uploadedRecords = allRecords.filter { it.status == AudioRecordEntity.STATUS_UPLOADED }
 
@@ -58,34 +59,22 @@ fun TimelineScreen(
         modifier = modifier
             .fillMaxSize()
             .background(PureBlack)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.pagePaddingV),
     ) {
-        // Title
-        Text(
-            text = "> 记忆时间线_",
-            style = MaterialTheme.typography.headlineLarge,
-            color = NeonGreen,
+        PageHeader(
+            title = "记忆时间线",
+            subtitle = "录音切片与上传状态",
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "MEMORY TIMELINE",
-            style = MaterialTheme.typography.labelMedium,
-            color = TextMuted,
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(Dimens.gapLg))
 
         if (allRecords.isEmpty()) {
-            // Empty state
-            EmptyTimeline()
+            EmptyTimeline(triggerSeconds = triggerDuration)
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+                contentPadding = PaddingValues(bottom = Dimens.pageBottomNavClearance),
             ) {
-                // Pending section
                 if (pendingRecords.isNotEmpty()) {
                     item {
                         SectionHeader("待处理 · ${pendingRecords.size}")
@@ -93,10 +82,9 @@ fun TimelineScreen(
                     items(pendingRecords, key = { it.id }) { record ->
                         TimelineItem(record = record, onClick = { onRecordClick(record) })
                     }
-                    item { Spacer(modifier = Modifier.height(16.dp)) }
+                    item { Spacer(modifier = Modifier.height(Dimens.gapMd)) }
                 }
 
-                // Uploaded section
                 if (uploadedRecords.isNotEmpty()) {
                     item {
                         SectionHeader("已上传 · ${uploadedRecords.size}")
@@ -116,12 +104,12 @@ private fun SectionHeader(text: String) {
         text = text,
         style = MaterialTheme.typography.labelMedium,
         color = TextSecondary,
-        modifier = Modifier.padding(vertical = 4.dp),
+        modifier = Modifier.padding(vertical = Dimens.gapXs),
     )
 }
 
 @Composable
-private fun EmptyTimeline() {
+private fun EmptyTimeline(triggerSeconds: Int) {
     val infiniteTransition = rememberInfiniteTransition(label = "empty")
     val alpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
@@ -137,28 +125,11 @@ private fun EmptyTimeline() {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        EmptyState(
+            symbol = "[ ]",
+            title = "尚无录音记录",
+            subtitle = "同时长按音量 +/- ${triggerSeconds} 秒开始录音",
             modifier = Modifier.alpha(alpha),
-        ) {
-            Text(
-                text = "[ ]",
-                style = MaterialTheme.typography.displayLarge,
-                color = TextMuted,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "尚无录音记录",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextMuted,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = "长按音量+/- 3秒开始录音",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextMuted,
-                textAlign = TextAlign.Center,
-            )
-        }
+        )
     }
 }

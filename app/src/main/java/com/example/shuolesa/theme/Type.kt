@@ -93,4 +93,12 @@ val Typography = Typography(
         letterSpacing = 0.5.sp,
         color = TextSecondary,
     ),
+    labelSmall = TextStyle(
+        fontFamily = JetBrainsMono,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.5.sp,
+        color = TextMuted,
+    ),
 )

@@ -16,8 +16,8 @@ class AudioRepository(private val dao: AudioRecordDao) {
 
     suspend fun insertRecord(record: AudioRecordEntity): Long = dao.insert(record)
 
-    suspend fun getPendingUploads(): List<AudioRecordEntity> =
-        dao.getByStatus(AudioRecordEntity.STATUS_PENDING)
+    suspend fun getPendingUploads(maxRetries: Int = 5): List<AudioRecordEntity> =
+        dao.getUploadCandidates(maxRetries)
 
     suspend fun markUploading(id: Long) =
         dao.updateStatus(id, AudioRecordEntity.STATUS_UPLOADING)

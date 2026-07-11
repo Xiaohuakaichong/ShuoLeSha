@@ -5,7 +5,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,7 +46,7 @@ import com.example.shuolesa.util.PermissionHelper
 import kotlinx.coroutines.delay
 
 /**
- * Main app navigation with bottom tabs and recording overlay.
+ * 主导航：底部 Tab + 录音/播放覆盖层。
  */
 @Composable
 fun AppNavigation() {
@@ -61,7 +60,6 @@ fun AppNavigation() {
     var isRecording by remember { mutableStateOf(AudioCaptureService.isRunning) }
     var selectedRecord by remember { mutableStateOf<AudioRecordEntity?>(null) }
 
-    // Poll recording state
     LaunchedEffect(Unit) {
         while (true) {
             isRecording = AudioCaptureService.isRunning
@@ -70,7 +68,6 @@ fun AppNavigation() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Main content with bottom nav
         Scaffold(
             containerColor = PureBlack,
             bottomBar = {
@@ -87,13 +84,13 @@ fun AppNavigation() {
                     )
                     1 -> TimelineScreen(
                         repository = repository,
+                        prefs = prefs,
                         onRecordClick = { record -> selectedRecord = record },
                     )
                 }
             }
         }
 
-        // Recording overlay (full screen on top)
         AnimatedVisibility(
             visible = isRecording,
             enter = fadeIn(),
@@ -102,7 +99,6 @@ fun AppNavigation() {
             ActiveRecordingScreen()
         }
 
-        // Audio player overlay
         AnimatedVisibility(
             visible = selectedRecord != null && !isRecording,
             enter = slideInVertically(initialOffsetY = { it }),

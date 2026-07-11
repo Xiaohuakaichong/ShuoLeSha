@@ -21,7 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "shuolesa_db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build().also { INSTANCE = it }
             }
         }

@@ -14,6 +14,15 @@ interface AudioRecordDao {
     @Query("SELECT * FROM audio_records WHERE status = :status ORDER BY createdAt ASC")
     suspend fun getByStatus(status: String): List<AudioRecordEntity>
 
+    @Query(
+        """
+        SELECT * FROM audio_records
+        WHERE status IN ('PENDING', 'FAILED') AND retryCount < :maxRetries
+        ORDER BY createdAt ASC
+        """,
+    )
+    suspend fun getUploadCandidates(maxRetries: Int): List<AudioRecordEntity>
+
     @Query("SELECT * FROM audio_records WHERE status = :status ORDER BY createdAt ASC")
     fun observeByStatus(status: String): Flow<List<AudioRecordEntity>>
 
