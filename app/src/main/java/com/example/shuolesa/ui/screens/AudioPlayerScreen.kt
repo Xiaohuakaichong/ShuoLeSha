@@ -52,14 +52,17 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.shuolesa.audio.OpusPlayer
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.theme.DangerRed
 import com.example.shuolesa.theme.DarkCard
 import com.example.shuolesa.theme.DarkGray
 import com.example.shuolesa.theme.Dimens
+import com.example.shuolesa.theme.MintCyan
 import com.example.shuolesa.theme.NeonGreen
 import com.example.shuolesa.theme.NeonGreenDim
 import com.example.shuolesa.theme.PureBlack
@@ -190,7 +193,7 @@ fun AudioPlayerScreen(
                 Text(
                     text = Formatters.formatDetailDate(record.createdAt),
                     style = MaterialTheme.typography.titleMedium,
-                    color = NeonGreen,
+                    color = MintCyan,
                 )
                 Spacer(modifier = Modifier.height(Dimens.gapXs))
                 Text(
@@ -215,38 +218,40 @@ fun AudioPlayerScreen(
                 }
             }
 
-            if (!record.transcription.isNullOrBlank() || !record.agentResult.isNullOrBlank()) {
+            if (!record.title.isNullOrBlank() || !record.summary.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(Dimens.gapMd))
-                TerminalCard(borderColor = NeonGreen.copy(alpha = 0.25f)) {
-                    SectionLabel("智能分析")
-                    if (!record.transcription.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(Dimens.gapSm))
+                TerminalCard {
+                    record.title?.takeIf { it.isNotBlank() }?.let {
                         Text(
-                            text = "识别文本",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextMuted,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = record.transcription,
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = it,
+                            style = MaterialTheme.typography.titleLarge,
                             color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
                         )
-                    }
-                    if (!record.agentResult.isNullOrBlank()) {
                         Spacer(modifier = Modifier.height(Dimens.gapSm))
+                    }
+                    record.summary?.takeIf { it.isNotBlank() }?.let {
                         Text(
-                            text = "处理结果",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextMuted,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = record.agentResult,
+                            text = it,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NeonGreenDim,
+                            color = TextSecondary,
+                            lineHeight = 22.sp,
                         )
                     }
+                }
+            }
+
+            if (!record.transcription.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(Dimens.gapMd))
+                TerminalCard {
+                    SectionLabel("逐字转录稿")
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                    Text(
+                        text = record.transcription,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        lineHeight = 21.sp,
+                    )
                 }
             }
 

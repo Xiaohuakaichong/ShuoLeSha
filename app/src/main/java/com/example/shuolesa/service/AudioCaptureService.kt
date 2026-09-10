@@ -17,7 +17,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.shuolesa.audio.AudioRecorder
 import com.example.shuolesa.audio.ChunkManager
-import com.example.shuolesa.audio.OpusEncoder
 import com.example.shuolesa.data.db.AppDatabase
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
@@ -59,7 +58,6 @@ class AudioCaptureService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var wakeLock: PowerManager.WakeLock? = null
     private var audioRecorder: AudioRecorder? = null
-    private var opusEncoder: OpusEncoder? = null
     private var chunkManager: ChunkManager? = null
     private var phoneStateMonitor: PhoneStateMonitor? = null
     private var hapticFeedback: HapticFeedback? = null
@@ -124,7 +122,6 @@ class AudioCaptureService : Service() {
 
         // Initialize audio pipeline
         val recorder = AudioRecorder()
-        val encoder = OpusEncoder()
 
         if (!recorder.init()) {
             Log.e(TAG, "Failed to init AudioRecorder")
@@ -132,19 +129,11 @@ class AudioCaptureService : Service() {
             return
         }
 
-        if (!encoder.init()) {
-            Log.e(TAG, "Failed to init OpusEncoder")
-            recorder.release()
-            stopSelf()
-            return
-        }
-
         val db = AppDatabase.getInstance(this)
         val repository = AudioRepository(db.audioRecordDao())
-        val chunkMgr = ChunkManager(this, encoder, repository, serviceScope)
+        val chunkMgr = ChunkManager(this, repository, serviceScope)
 
         audioRecorder = recorder
-        opusEncoder = encoder
         chunkManager = chunkMgr
 
         // Start phone state monitor
@@ -174,13 +163,11 @@ class AudioCaptureService : Service() {
 
         // Start recording pipeline
         serviceScope.launch(Dispatchers.IO) {
-            val outputStream = chunkMgr.startSession()
-            encoder.start(outputStream)
+            chunkMgr.startSession()
 
             recorder.startRecording(object : AudioRecorder.PcmCallback {
                 override fun onPcmData(buffer: ShortArray, readCount: Int) {
-                    encoder.encode(buffer, readCount)
-                    chunkMgr.onFrameEncoded()
+                    chunkMgr.onPcmFrame(buffer, readCount)
                     elapsedMs = chunkMgr.elapsedMs
                     onElapsedChanged?.invoke(elapsedMs)
                 }
@@ -201,11 +188,9 @@ class AudioCaptureService : Service() {
 
         // Cleanup
         audioRecorder?.release()
-        opusEncoder?.release()
         phoneStateMonitor?.stop()
 
         audioRecorder = null
-        opusEncoder = null
         chunkManager = null
         phoneStateMonitor = null
 

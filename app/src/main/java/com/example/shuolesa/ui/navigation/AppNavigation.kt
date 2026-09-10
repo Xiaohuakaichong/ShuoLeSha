@@ -1,5 +1,7 @@
 package com.example.shuolesa.ui.navigation
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -10,9 +12,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -29,12 +36,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.shuolesa.data.db.AppDatabase
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
 import com.example.shuolesa.service.AudioCaptureService
+import com.example.shuolesa.theme.BgDark
 import com.example.shuolesa.theme.DarkSurface
+import com.example.shuolesa.theme.MintCyan
 import com.example.shuolesa.theme.NeonGreen
 import com.example.shuolesa.theme.PureBlack
 import com.example.shuolesa.theme.TextMuted
@@ -67,9 +78,37 @@ fun AppNavigation() {
         }
     }
 
+    val triggerStartRecord = {
+        if (permissionHelper.hasAllPermissions()) {
+            val intent = Intent(context, AudioCaptureService::class.java).apply {
+                action = AudioCaptureService.ACTION_START
+            }
+            ContextCompat.startForegroundService(context, intent)
+        } else {
+            Toast.makeText(context, "请先在设置中授予录音与麦克风权限", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = PureBlack,
+            containerColor = BgDark,
+            floatingActionButton = {
+                if (!isRecording && selectedTab == 0) {
+                    FloatingActionButton(
+                        onClick = triggerStartRecord,
+                        containerColor = MintCyan,
+                        contentColor = BgDark,
+                        shape = CircleShape,
+                        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "快捷启动录音",
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+            },
             bottomBar = {
                 if (!isRecording) {
                     BottomNav(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
@@ -78,14 +117,15 @@ fun AppNavigation() {
         ) { paddingValues ->
             Box(modifier = Modifier.padding(paddingValues)) {
                 when (selectedTab) {
-                    0 -> NodeSettingsScreen(
-                        prefs = prefs,
-                        permissionHelper = permissionHelper,
-                    )
-                    1 -> TimelineScreen(
+                    0 -> TimelineScreen(
                         repository = repository,
                         prefs = prefs,
                         onRecordClick = { record -> selectedRecord = record },
+                        onStartRecord = triggerStartRecord,
+                    )
+                    1 -> NodeSettingsScreen(
+                        prefs = prefs,
+                        permissionHelper = permissionHelper,
                     )
                 }
             }
@@ -122,8 +162,8 @@ private fun BottomNav(
     data class NavItem(val label: String, val icon: ImageVector)
 
     val items = listOf(
-        NavItem("配置", Icons.Default.Settings),
-        NavItem("时间线", Icons.Default.Timeline),
+        NavItem("记忆流", Icons.Default.Timeline),
+        NavItem("设置", Icons.Default.Settings),
     )
 
     NavigationBar(
@@ -143,7 +183,7 @@ private fun BottomNav(
                     selectedTextColor = NeonGreen,
                     unselectedIconColor = TextMuted,
                     unselectedTextColor = TextMuted,
-                    indicatorColor = NeonGreen.copy(alpha = 0.1f),
+                    indicatorColor = NeonGreen.copy(alpha = 0.15f),
                 ),
             )
         }

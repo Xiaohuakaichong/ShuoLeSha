@@ -6,14 +6,17 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Custom player that decodes length-prefixed Opus frames from the local filesystem
- * using Android's MediaCodec and plays them via AudioTrack.
+ * Audio player supporting standard WAV playback via MediaPlayer,
+ * with fallback to length-prefixed Opus decoding via MediaCodec.
  */
 class OpusPlayer(private val context: Context) {
     companion object {
@@ -26,6 +29,22 @@ class OpusPlayer(private val context: Context) {
         val packetSize: Int,
         val timeMs: Long
     )
+
+    private var isWavFormat = false
+    private var mediaPlayer: MediaPlayer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val progressRunnable = object : Runnable {
+        override fun run() {
+            if (isPlaying && !isPaused && isWavFormat && mediaPlayer != null) {
+                try {
+                    val pos = mediaPlayer?.currentPosition?.toLong() ?: 0L
+                    currentPositionMs = pos
+                    onProgressUpdate?.invoke(pos)
+                    mainHandler.postDelayed(this, 50)
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     private var audioTrack: AudioTrack? = null
     private var decoder: MediaCodec? = null
@@ -56,6 +75,40 @@ class OpusPlayer(private val context: Context) {
                 return false
             }
 
+            val isWav = filePath.endsWith(".wav", ignoreCase = true) || run {
+                if (file.length() >= 4) {
+                    val header = ByteArray(4)
+                    file.inputStream().use { it.read(header) }
+                    header.contentEquals("RIFF".toByteArray())
+                } else false
+            }
+
+            if (isWav) {
+                isWavFormat = true
+                mediaPlayer?.release()
+                mediaPlayer = MediaPlayer().apply {
+                    setDataSource(filePath)
+                    prepare()
+                    setOnCompletionListener {
+                        this@OpusPlayer.isPlaying = false
+                        mainHandler.removeCallbacks(progressRunnable)
+                        currentPositionMs = duration.toLong()
+                        onProgressUpdate?.invoke(currentPositionMs)
+                        onCompletion?.invoke()
+                    }
+                    setOnErrorListener { _, what, extra ->
+                        this@OpusPlayer.isPlaying = false
+                        mainHandler.removeCallbacks(progressRunnable)
+                        onError?.invoke("播放失败 ($what, $extra)")
+                        true
+                    }
+                }
+                durationMs = mediaPlayer?.duration?.toLong() ?: 0L
+                currentPositionMs = 0L
+                return true
+            }
+
+            isWavFormat = false
             fileBytes = file.readBytes()
             indexList.clear()
 
@@ -69,14 +122,14 @@ class OpusPlayer(private val context: Context) {
                 val offset = buffer.position().toLong()
                 indexList.add(OpusPacketIndex(offset, size, currentTimeMs))
                 buffer.position(buffer.position() + size)
-                currentTimeMs += 20 // 20ms per Opus packet (Android MediaCodec Opus encoder default output frame)
+                currentTimeMs += 20 // 20ms per Opus packet
             }
 
             durationMs = currentTimeMs
             currentPositionMs = 0L
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to prepare OpusPlayer", e)
+            Log.e(TAG, "Failed to prepare player", e)
             onError?.invoke("加载失败: ${e.message}")
             return false
         }
@@ -89,6 +142,30 @@ class OpusPlayer(private val context: Context) {
     fun isPlaying(): Boolean = isPlaying && !isPaused
 
     fun start() {
+        if (isWavFormat) {
+            val mp = mediaPlayer ?: return
+            if (isPlaying) {
+                if (isPaused) {
+                    isPaused = false
+                    try {
+                        mp.start()
+                        mainHandler.post(progressRunnable)
+                    } catch (_: Exception) {}
+                }
+                return
+            }
+            isPlaying = true
+            isPaused = false
+            try {
+                mp.start()
+                mainHandler.post(progressRunnable)
+            } catch (e: Exception) {
+                Log.e(TAG, "MediaPlayer start failed", e)
+                onError?.invoke("播放失败: ${e.message}")
+            }
+            return
+        }
+
         if (isPlaying) {
             if (isPaused) {
                 isPaused = false
@@ -108,6 +185,17 @@ class OpusPlayer(private val context: Context) {
     }
 
     fun pause() {
+        if (isWavFormat) {
+            if (isPlaying && !isPaused) {
+                isPaused = true
+                try {
+                    mediaPlayer?.pause()
+                    mainHandler.removeCallbacks(progressRunnable)
+                } catch (_: Exception) {}
+            }
+            return
+        }
+
         if (isPlaying && !isPaused) {
             isPaused = true
             try {
@@ -117,7 +205,17 @@ class OpusPlayer(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        seekTargetMs = positionMs.coerceIn(0L, durationMs)
+        val target = positionMs.coerceIn(0L, durationMs)
+        if (isWavFormat) {
+            try {
+                mediaPlayer?.seekTo(target.toInt())
+                currentPositionMs = target
+                onProgressUpdate?.invoke(currentPositionMs)
+            } catch (_: Exception) {}
+            return
+        }
+
+        seekTargetMs = target
         if (isPaused) {
             currentPositionMs = seekTargetMs
             onProgressUpdate?.invoke(currentPositionMs)
@@ -127,6 +225,14 @@ class OpusPlayer(private val context: Context) {
     fun stop() {
         isPlaying = false
         isPaused = false
+        if (isWavFormat) {
+            mainHandler.removeCallbacks(progressRunnable)
+            try {
+                mediaPlayer?.stop()
+                mediaPlayer?.prepare()
+            } catch (_: Exception) {}
+            return
+        }
         playThread?.interrupt()
         try {
             playThread?.join(500)
@@ -137,6 +243,12 @@ class OpusPlayer(private val context: Context) {
 
     fun release() {
         stop()
+        if (isWavFormat) {
+            try {
+                mediaPlayer?.release()
+            } catch (_: Exception) {}
+            mediaPlayer = null
+        }
     }
 
     private fun releaseResources() {

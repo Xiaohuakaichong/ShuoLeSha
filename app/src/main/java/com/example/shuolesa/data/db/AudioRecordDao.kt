@@ -38,8 +38,37 @@ interface AudioRecordDao {
     @Query("UPDATE audio_records SET status = :status, uploadedAt = :uploadedAt, transcription = :transcription, agentResult = :agentResult WHERE id = :id")
     suspend fun markUploadedWithResult(id: Long, status: String, uploadedAt: Long?, transcription: String?, agentResult: String?)
 
+    @Query(
+        """
+        UPDATE audio_records 
+        SET status = :status, uploadedAt = :uploadedAt, title = :title, summary = :summary, 
+            actionItems = :actionItems, tags = :tags, transcription = :transcription, agentResult = :agentResult 
+        WHERE id = :id
+        """
+    )
+    suspend fun markProcessedStructured(
+        id: Long,
+        status: String,
+        uploadedAt: Long?,
+        title: String?,
+        summary: String?,
+        actionItems: String?,
+        tags: String?,
+        transcription: String?,
+        agentResult: String?,
+    )
+
     @Query("UPDATE audio_records SET retryCount = retryCount + 1 WHERE id = :id")
     suspend fun incrementRetryCount(id: Long)
+
+    @Query("UPDATE audio_records SET status = :status, title = :title, summary = :summary, agentResult = :agentResult WHERE id = :id")
+    suspend fun markFailedWithReason(
+        id: Long,
+        status: String = AudioRecordEntity.STATUS_FAILED,
+        title: String?,
+        summary: String?,
+        agentResult: String?,
+    )
 
     @Query("DELETE FROM audio_records WHERE id = :id")
     suspend fun deleteById(id: Long)

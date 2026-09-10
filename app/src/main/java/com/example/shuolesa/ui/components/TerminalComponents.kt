@@ -28,16 +28,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.shuolesa.data.db.AudioRecordEntity
-import com.example.shuolesa.theme.BorderGray
-import com.example.shuolesa.theme.DarkCard
+import com.example.shuolesa.theme.CardDark
 import com.example.shuolesa.theme.Dimens
-import com.example.shuolesa.theme.NeonGreen
+import com.example.shuolesa.theme.ElectricBlue
+import com.example.shuolesa.theme.MintCyan
 import com.example.shuolesa.theme.StatusFailed
 import com.example.shuolesa.theme.StatusPending
 import com.example.shuolesa.theme.StatusUploaded
+import com.example.shuolesa.theme.SurfaceBorder
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
@@ -47,25 +50,31 @@ fun PageHeader(
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,
-    leading: @Composable (() -> Unit)? = null,
+    trailing: @Composable (() -> Unit)? = null,
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (leading != null) {
-                leading()
-            }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
             Text(
-                text = "> ${title}_",
+                text = title,
                 style = MaterialTheme.typography.headlineLarge,
-                color = NeonGreen,
+                color = TextPrimary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
             )
         }
-        Spacer(modifier = Modifier.height(Dimens.gapSm))
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.labelMedium,
-            color = TextMuted,
-        )
+        if (trailing != null) {
+            trailing()
+        }
     }
 }
 
@@ -76,8 +85,9 @@ fun SectionLabel(
 ) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = TextSecondary,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = TextPrimary,
         modifier = modifier,
     )
 }
@@ -85,7 +95,8 @@ fun SectionLabel(
 @Composable
 fun TerminalCard(
     modifier: Modifier = Modifier,
-    borderColor: Color = BorderGray,
+    borderColor: Color = SurfaceBorder,
+    backgroundColor: Color = CardDark,
     contentPadding: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -93,7 +104,7 @@ fun TerminalCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Dimens.cardRadius))
-            .background(DarkCard)
+            .background(backgroundColor)
             .border(Dimens.borderThin, borderColor, RoundedCornerShape(Dimens.cardRadius))
             .then(
                 if (contentPadding) {
@@ -123,6 +134,7 @@ fun SettingsRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted)
             }
             trailing()
@@ -138,23 +150,52 @@ fun StatusBadge(
 ) {
     val color = statusColor(status)
     val label = statusLabel(status)
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    val bg = color.copy(alpha = 0.15f)
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
-        if (showDot) {
-            Box(
-                modifier = Modifier
-                    .size(Dimens.statusDot)
-                    .clip(CircleShape)
-                    .background(color),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            if (showDot) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(color),
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = color,
+                fontWeight = FontWeight.Medium,
             )
         }
+    }
+}
+
+@Composable
+fun TagChip(
+    tag: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(ElectricBlue.copy(alpha = 0.12f))
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+    ) {
         Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = color,
+            text = "#$tag",
+            style = MaterialTheme.typography.labelSmall,
+            color = ElectricBlue,
+            fontSize = 11.sp,
         )
     }
 }
@@ -167,9 +208,9 @@ fun statusColor(status: String): Color = when (status) {
 }
 
 fun statusLabel(status: String): String = when (status) {
-    AudioRecordEntity.STATUS_UPLOADED -> "已上传"
-    AudioRecordEntity.STATUS_PENDING -> "待上传"
-    AudioRecordEntity.STATUS_UPLOADING -> "上传中"
+    AudioRecordEntity.STATUS_UPLOADED -> "已完成"
+    AudioRecordEntity.STATUS_PENDING -> "排队中"
+    AudioRecordEntity.STATUS_UPLOADING -> "处理中"
     AudioRecordEntity.STATUS_FAILED -> "失败"
     else -> status
 }
@@ -181,21 +222,21 @@ fun TerminalOutlineButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     selected: Boolean = true,
-    color: Color = NeonGreen,
+    color: Color = MintCyan,
     loading: Boolean = false,
 ) {
     val contentColor = if (selected) color else TextMuted
-    val border = if (selected) color else BorderGray
-    val container = if (selected) color.copy(alpha = 0.15f) else DarkCard
+    val border = if (selected) color.copy(alpha = 0.6f) else SurfaceBorder
+    val container = if (selected) color.copy(alpha = 0.12f) else CardDark
 
     Button(
         onClick = onClick,
-        modifier = modifier.height(Dimens.buttonHeight),
+        modifier = modifier.height(Dimens.buttonHeightSm),
         enabled = enabled && !loading,
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
             contentColor = contentColor,
-            disabledContainerColor = DarkCard,
+            disabledContainerColor = CardDark,
             disabledContentColor = TextMuted,
         ),
         shape = RoundedCornerShape(Dimens.fieldRadius),
@@ -203,7 +244,7 @@ fun TerminalOutlineButton(
     ) {
         if (loading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
                 color = contentColor,
                 strokeWidth = 2.dp,
             )
@@ -238,11 +279,11 @@ fun TerminalTextField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = TextPrimary,
             unfocusedTextColor = TextPrimary,
-            cursorColor = NeonGreen,
-            focusedBorderColor = NeonGreen,
-            unfocusedBorderColor = BorderGray,
-            focusedContainerColor = DarkCard,
-            unfocusedContainerColor = DarkCard,
+            cursorColor = MintCyan,
+            focusedBorderColor = MintCyan,
+            unfocusedBorderColor = SurfaceBorder,
+            focusedContainerColor = CardDark,
+            unfocusedContainerColor = CardDark,
         ),
         shape = RoundedCornerShape(Dimens.fieldRadius),
     )
@@ -267,9 +308,10 @@ fun EmptyState(
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextMuted,
+            style = MaterialTheme.typography.titleMedium,
+            color = TextSecondary,
         )
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = subtitle,
             style = MaterialTheme.typography.bodySmall,
@@ -277,3 +319,4 @@ fun EmptyState(
         )
     }
 }
+

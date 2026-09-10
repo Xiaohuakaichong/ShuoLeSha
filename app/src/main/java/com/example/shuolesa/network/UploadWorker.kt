@@ -31,12 +31,18 @@ class UploadWorker(
         val prefs = AppPreferences(applicationContext)
         val apiService = ApiService()
 
-        val cozeBaseUrl = prefs.getCozeBaseUrlSync()
-        val cozeApiKey = prefs.getCozeApiKeySync()
-        val cozeWorkflowId = prefs.getCozeWorkflowIdSync()
+        val baseUrl = prefs.getBaseUrlSync()
+        val apiKey = prefs.getApiKeySync()
+        val asrModel = prefs.getAsrModelSync()
+        val llmModel = prefs.getLlmModelSync()
+        val systemPrompt = prefs.getSystemPromptSync()
+        val keepLocalAudio = prefs.isKeepLocalAudioSync()
 
-        if (cozeApiKey.isBlank() || cozeWorkflowId.isBlank()) {
-            Log.w(TAG, "Coze API Key or Workflow ID not configured, skipping upload")
+        val isLocalHost = baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1") ||
+            baseUrl.contains("10.0.2.2") || baseUrl.contains("192.168.")
+
+        if (apiKey.isBlank() && !isLocalHost) {
+            Log.w(TAG, "API Key is empty for cloud endpoint, skipping upload")
             return Result.success()
         }
 
@@ -51,56 +57,55 @@ class UploadWorker(
             val file = File(record.filePath)
             if (!file.exists()) {
                 Log.w(TAG, "File not found: ${record.filePath}, marking as failed")
-                repository.markFailed(record.id)
+                repository.markFailed(record.id, "音频文件不存在或已被清理")
                 continue
             }
 
             repository.markUploading(record.id)
 
-            // Step 1: Upload file to Coze to get fileId
-            val uploadResult = apiService.uploadCozeFile(cozeBaseUrl, cozeApiKey, file)
-            if (uploadResult.isSuccess) {
-                val fileId = uploadResult.getOrThrow()
-                Log.d(TAG, "Uploaded file to Coze: ${file.name}, fileId: $fileId")
-
-                // Step 2: Run Coze workflow using the fileId
-                val workflowResult = apiService.runCozeWorkflow(cozeBaseUrl, cozeApiKey, cozeWorkflowId, fileId)
-                if (workflowResult.isSuccess) {
-                    Log.d(TAG, "Successfully ran Coze workflow for: ${file.name}")
-                    val responseStr = workflowResult.getOrNull()
-                    var trans: String? = null
-                    var agentRes: String? = null
-                    if (!responseStr.isNullOrBlank()) {
-                        try {
-                            val json = org.json.JSONObject(responseStr)
-                            // Workflow may return nested JSON string in "data"
-                            val payload = try {
-                                val inner = org.json.JSONObject(responseStr)
-                                inner
-                            } catch (_: Exception) {
-                                json
-                            }
-                            trans = payload.optString("transcription").takeIf { it.isNotEmpty() }
-                            agentRes = payload.optString("agentResult").takeIf { it.isNotEmpty() }
-                                ?: payload.optString("result").takeIf { it.isNotEmpty() }
-                        } catch (_: Exception) {
-                            agentRes = responseStr
-                        }
-                    }
-                    repository.markUploadedWithResult(record.id, trans, agentRes)
-                    // Delete local file after successful upload
-                    file.delete()
-                } else {
-                    Log.e(TAG, "Coze workflow run failed: ${file.name}", workflowResult.exceptionOrNull())
-                    repository.incrementRetry(record.id)
-                    repository.markFailed(record.id)
-                    allSuccess = false
-                }
-            } else {
-                Log.e(TAG, "Coze upload failed: ${file.name}", uploadResult.exceptionOrNull())
+            // Step 1: Transcribe audio to text via OpenAI-compatible ASR
+            val asrResult = apiService.transcribeAudio(baseUrl, apiKey, asrModel, file)
+            if (asrResult.isFailure) {
+                val errorMsg = asrResult.exceptionOrNull()?.message ?: "ASR 语音识别失败"
+                Log.e(TAG, "ASR failed for record ${record.id}: $errorMsg", asrResult.exceptionOrNull())
                 repository.incrementRetry(record.id)
-                repository.markFailed(record.id)
+                repository.markFailed(record.id, errorMsg)
                 allSuccess = false
+                continue
+            }
+
+            val transcription = asrResult.getOrThrow()
+            Log.d(TAG, "ASR transcription success: $transcription")
+
+            // Step 2: Extract structured title, summary, action items & tags via LLM
+            val llmResult = apiService.generateStructuredNotes(
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                llmModel = llmModel,
+                systemPrompt = systemPrompt,
+                transcription = transcription,
+            )
+
+            val notes = llmResult.getOrNull()
+            val title = notes?.title ?: "随手语音"
+            val summary = notes?.summary ?: transcription
+            val actionItemsJson = notes?.actionItems?.let { org.json.JSONArray(it).toString() }
+            val tagsJson = notes?.tags?.let { org.json.JSONArray(it).toString() }
+            val rawJson = notes?.rawJson ?: transcription
+
+            repository.markProcessedStructured(
+                id = record.id,
+                title = title,
+                summary = summary,
+                actionItems = actionItemsJson,
+                tags = tagsJson,
+                transcription = transcription,
+                agentResult = rawJson,
+            )
+
+            // Step 3: Handle audio file retention
+            if (!keepLocalAudio) {
+                file.delete()
             }
         }
 

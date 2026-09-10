@@ -28,8 +28,38 @@ class AudioRepository(private val dao: AudioRecordDao) {
     suspend fun markUploadedWithResult(id: Long, transcription: String?, agentResult: String?) =
         dao.markUploadedWithResult(id, AudioRecordEntity.STATUS_UPLOADED, System.currentTimeMillis(), transcription, agentResult)
 
-    suspend fun markFailed(id: Long) {
-        dao.updateStatus(id, AudioRecordEntity.STATUS_FAILED)
+    suspend fun markProcessedStructured(
+        id: Long,
+        title: String?,
+        summary: String?,
+        actionItems: String?,
+        tags: String?,
+        transcription: String?,
+        agentResult: String?,
+    ) = dao.markProcessedStructured(
+        id = id,
+        status = AudioRecordEntity.STATUS_UPLOADED,
+        uploadedAt = System.currentTimeMillis(),
+        title = title,
+        summary = summary,
+        actionItems = actionItems,
+        tags = tags,
+        transcription = transcription,
+        agentResult = agentResult,
+    )
+
+    suspend fun markFailed(id: Long, reason: String? = null) {
+        if (!reason.isNullOrBlank()) {
+            dao.markFailedWithReason(
+                id = id,
+                status = AudioRecordEntity.STATUS_FAILED,
+                title = "处理失败",
+                summary = reason,
+                agentResult = reason,
+            )
+        } else {
+            dao.updateStatus(id, AudioRecordEntity.STATUS_FAILED)
+        }
     }
 
     suspend fun incrementRetry(id: Long) = dao.incrementRetryCount(id)

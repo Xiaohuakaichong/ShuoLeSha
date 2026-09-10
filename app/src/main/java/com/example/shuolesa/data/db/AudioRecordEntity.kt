@@ -16,6 +16,10 @@ data class AudioRecordEntity(
     val status: String = STATUS_PENDING,
     val uploadedAt: Long? = null,
     val retryCount: Int = 0,
+    val title: String? = null,
+    val summary: String? = null,
+    val actionItems: String? = null,
+    val tags: String? = null,
     val transcription: String? = null,
     val agentResult: String? = null,
 ) {
