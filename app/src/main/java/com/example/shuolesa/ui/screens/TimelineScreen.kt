@@ -220,7 +220,6 @@ fun TimelineScreen(
     ) {
         PageHeader(
             title = "说了啥 · 记忆流",
-            subtitle = "随手语音转写与 AI 智能提炼",
             trailing = {
                 Box(
                     modifier = Modifier

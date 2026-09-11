@@ -145,7 +145,7 @@ fun TasksScreen(
         modifier = modifier
             .fillMaxSize()
             .background(BgDark)
-            .padding(horizontal = Dimens.pagePaddingH),
+            .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.pagePaddingV),
     ) {
         PageHeader(
             title = "待办中心",

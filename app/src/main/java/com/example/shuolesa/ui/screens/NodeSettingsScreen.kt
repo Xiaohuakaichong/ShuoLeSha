@@ -145,7 +145,6 @@ fun NodeSettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(BgDark)
-            .statusBarsPadding()
             .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.pagePaddingV),
     ) {
         PageHeader(
@@ -1152,7 +1151,7 @@ private fun AboutSettingsContent(
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v2.1.2",
+                    text = "v2.1.3",
                     style = MaterialTheme.typography.labelSmall,
                     color = MintCyan,
                     fontWeight = FontWeight.Bold,

@@ -221,7 +221,7 @@ fun LifeLogScreen(
         modifier = modifier
             .fillMaxSize()
             .background(BgDark)
-            .padding(horizontal = Dimens.pagePaddingH)
+            .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.pagePaddingV)
             .verticalScroll(rememberScrollState()),
     ) {
         PageHeader(

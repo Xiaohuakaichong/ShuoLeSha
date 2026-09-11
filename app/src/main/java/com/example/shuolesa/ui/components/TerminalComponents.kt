@@ -48,7 +48,7 @@ import com.example.shuolesa.theme.TextSecondary
 @Composable
 fun PageHeader(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     modifier: Modifier = Modifier,
     trailing: @Composable (() -> Unit)? = null,
 ) {
@@ -65,12 +65,14 @@ fun PageHeader(
                 style = MaterialTheme.typography.headlineLarge,
                 color = TextPrimary,
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            }
         }
         if (trailing != null) {
             trailing()
