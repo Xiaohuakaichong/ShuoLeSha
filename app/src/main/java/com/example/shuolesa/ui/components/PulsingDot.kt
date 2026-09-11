@@ -70,11 +70,11 @@ fun PulsingDot(
         label = "ringAlpha",
     )
 
+    val fade = AppColor.background.copy(alpha = 0f)
     Canvas(modifier = modifier.size(size.dp)) {
         val center = Offset(this.size.width / 2, this.size.height / 2)
         val coreRadius = this.size.minDimension / 6
 
-        // Outer expanding ring
         drawCircle(
             color = color.copy(alpha = outerRingAlpha),
             radius = coreRadius * outerRingScale,
@@ -86,7 +86,7 @@ fun PulsingDot(
                 colors = listOf(
                     color.copy(alpha = glowAlpha),
                     color.copy(alpha = glowAlpha * 0.2f),
-                    AppColor.background.copy(alpha = 0f),
+                    fade,
                 ),
                 center = center,
                 radius = coreRadius * 3 * scale,

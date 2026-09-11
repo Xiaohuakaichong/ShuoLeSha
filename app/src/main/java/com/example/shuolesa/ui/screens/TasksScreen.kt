@@ -141,7 +141,6 @@ fun TasksScreen(
         PageHeader(
             title = "待办",
             subtitle = "${pendingTasks.size} 项进行中",
-            onSettings = onOpenSettings,
             trailing = {
                 if (pendingTasks.isNotEmpty()) {
                     IconButton(

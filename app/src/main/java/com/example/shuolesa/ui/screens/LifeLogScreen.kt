@@ -221,7 +221,6 @@ fun LifeLogScreen(
         PageHeader(
             title = "今日",
             subtitle = "全天复盘",
-            onSettings = onOpenSettings,
             trailing = {
                 if (parsedResult != null) {
                     IconButton(

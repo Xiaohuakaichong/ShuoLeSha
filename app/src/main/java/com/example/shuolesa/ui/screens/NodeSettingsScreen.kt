@@ -108,7 +108,7 @@ import kotlinx.coroutines.withContext
 fun NodeSettingsScreen(
     prefs: AppPreferences,
     permissionHelper: PermissionHelper,
-    onBack: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -156,18 +156,17 @@ fun NodeSettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val themeMode by prefs.themeMode.collectAsState(initial = "light")
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(BgDark)
-            .statusBarsPadding()
-            .navigationBarsPadding()
             .imePadding()
             .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.pagePaddingV),
     ) {
         PageHeader(
             title = "设置",
-            subtitle = "录音、盲操、引擎与诊断",
+            subtitle = "外观、录音与引擎",
             onBack = onBack,
         )
 
@@ -178,6 +177,37 @@ fun NodeSettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
+            SectionLabel("外观")
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+            ) {
+                SelectableTile(
+                    title = "浅色",
+                    subtitle = "奶油纸",
+                    selected = themeMode == "light",
+                    onClick = { scope.launch { prefs.setThemeMode("light") } },
+                    modifier = Modifier.weight(1f),
+                )
+                SelectableTile(
+                    title = "深色",
+                    subtitle = "墨色",
+                    selected = themeMode == "dark",
+                    onClick = { scope.launch { prefs.setThemeMode("dark") } },
+                    modifier = Modifier.weight(1f),
+                )
+                SelectableTile(
+                    title = "系统",
+                    subtitle = "跟随",
+                    selected = themeMode == "system",
+                    onClick = { scope.launch { prefs.setThemeMode("system") } },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(Dimens.gapXl))
+
             RecordingSettingsContent(
                 launchStrategy = launchStrategy,
                 recordingMode = recordingMode,
@@ -1003,7 +1033,7 @@ private fun AboutSettingsContent(
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v3.0.1",
+                    text = "v3.0.2",
                     style = MaterialTheme.typography.labelSmall,
                     color = Accent,
                     fontWeight = FontWeight.Bold,

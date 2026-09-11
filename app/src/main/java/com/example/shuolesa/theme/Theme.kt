@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,57 +20,101 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-private val LightColorScheme = lightColorScheme(
-    primary = AppColor.primary,
-    onPrimary = AppColor.onPrimary,
-    primaryContainer = AppColor.primaryContainer,
-    onPrimaryContainer = AppColor.onPrimaryContainer,
-    secondary = AppColor.secondary,
-    onSecondary = AppColor.onSecondary,
-    secondaryContainer = AppColor.secondaryContainer,
-    onSecondaryContainer = AppColor.onSecondaryContainer,
-    tertiary = AppColor.tertiary,
-    onTertiary = AppColor.onTertiary,
-    tertiaryContainer = AppColor.tertiaryContainer,
-    onTertiaryContainer = AppColor.onTertiaryContainer,
-    background = AppColor.background,
-    onBackground = AppColor.onBackground,
-    surface = AppColor.surface,
-    onSurface = AppColor.onSurface,
-    surfaceVariant = AppColor.surfaceVariant,
-    onSurfaceVariant = AppColor.onSurfaceVariant,
-    surfaceTint = AppColor.primary,
-    surfaceBright = AppColor.surfaceBright,
-    surfaceDim = AppColor.surfaceDim,
-    surfaceContainerLowest = AppColor.surfaceContainerLowest,
-    surfaceContainerLow = AppColor.surfaceContainerLow,
-    surfaceContainer = AppColor.surfaceContainer,
-    surfaceContainerHigh = AppColor.surfaceContainerHigh,
-    surfaceContainerHighest = AppColor.surfaceContainerHighest,
-    inverseSurface = AppColor.textPrimary,
-    inverseOnSurface = AppColor.surface,
-    inversePrimary = AppColor.primaryDim,
-    outline = AppColor.outline,
-    outlineVariant = AppColor.outlineVariant,
-    error = AppColor.danger,
-    onError = AppColor.onDanger,
-    errorContainer = AppColor.dangerContainer,
-    onErrorContainer = AppColor.textPrimary,
-    scrim = AppColor.scrim,
-)
-
-@Composable
-fun ShuoLeSaTheme(
-    content: @Composable () -> Unit,
-) {
-    MaterialTheme(
-        colorScheme = LightColorScheme,
-        typography = Typography,
-        content = content,
+private fun colorSchemeOf(p: AppPalette, dark: Boolean) = if (dark) {
+    darkColorScheme(
+        primary = p.primary,
+        onPrimary = p.onPrimary,
+        primaryContainer = p.primaryContainer,
+        onPrimaryContainer = p.onPrimaryContainer,
+        secondary = p.secondary,
+        onSecondary = p.onSecondary,
+        secondaryContainer = p.secondaryContainer,
+        onSecondaryContainer = p.onSecondaryContainer,
+        tertiary = p.tertiary,
+        onTertiary = p.onTertiary,
+        tertiaryContainer = p.tertiaryContainer,
+        onTertiaryContainer = p.onTertiaryContainer,
+        background = p.background,
+        onBackground = p.onBackground,
+        surface = p.surface,
+        onSurface = p.onSurface,
+        surfaceVariant = p.surfaceVariant,
+        onSurfaceVariant = p.onSurfaceVariant,
+        surfaceTint = p.primary,
+        surfaceBright = p.surfaceBright,
+        surfaceDim = p.surfaceDim,
+        surfaceContainerLowest = p.surfaceContainerLowest,
+        surfaceContainerLow = p.surfaceContainerLow,
+        surfaceContainer = p.surfaceContainer,
+        surfaceContainerHigh = p.surfaceContainerHigh,
+        surfaceContainerHighest = p.surfaceContainerHighest,
+        inverseSurface = p.textPrimary,
+        inverseOnSurface = p.surface,
+        inversePrimary = p.primaryDim,
+        outline = p.outline,
+        outlineVariant = p.outlineVariant,
+        error = p.danger,
+        onError = p.onDanger,
+        errorContainer = p.dangerContainer,
+        onErrorContainer = p.textPrimary,
+        scrim = p.scrim,
+    )
+} else {
+    lightColorScheme(
+        primary = p.primary,
+        onPrimary = p.onPrimary,
+        primaryContainer = p.primaryContainer,
+        onPrimaryContainer = p.onPrimaryContainer,
+        secondary = p.secondary,
+        onSecondary = p.onSecondary,
+        secondaryContainer = p.secondaryContainer,
+        onSecondaryContainer = p.onSecondaryContainer,
+        tertiary = p.tertiary,
+        onTertiary = p.onTertiary,
+        tertiaryContainer = p.tertiaryContainer,
+        onTertiaryContainer = p.onTertiaryContainer,
+        background = p.background,
+        onBackground = p.onBackground,
+        surface = p.surface,
+        onSurface = p.onSurface,
+        surfaceVariant = p.surfaceVariant,
+        onSurfaceVariant = p.onSurfaceVariant,
+        surfaceTint = p.primary,
+        surfaceBright = p.surfaceBright,
+        surfaceDim = p.surfaceDim,
+        surfaceContainerLowest = p.surfaceContainerLowest,
+        surfaceContainerLow = p.surfaceContainerLow,
+        surfaceContainer = p.surfaceContainer,
+        surfaceContainerHigh = p.surfaceContainerHigh,
+        surfaceContainerHighest = p.surfaceContainerHighest,
+        inverseSurface = p.textPrimary,
+        inverseOnSurface = p.surface,
+        inversePrimary = p.primaryDim,
+        outline = p.outline,
+        outlineVariant = p.outlineVariant,
+        error = p.danger,
+        onError = p.onDanger,
+        errorContainer = p.dangerContainer,
+        onErrorContainer = p.textPrimary,
+        scrim = p.scrim,
     )
 }
 
-/** Soft mint wash on paper. Tab screens stay transparent so this shows through. */
+@Composable
+fun ShuoLeSaTheme(
+    darkTheme: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val palette = if (darkTheme) DarkPalette else LightPalette
+    CompositionLocalProvider(LocalAppPalette provides palette) {
+        MaterialTheme(
+            colorScheme = colorSchemeOf(palette, darkTheme),
+            typography = Typography,
+            content = content,
+        )
+    }
+}
+
 @Composable
 fun InkAtmosphere(modifier: Modifier = Modifier) {
     Box(

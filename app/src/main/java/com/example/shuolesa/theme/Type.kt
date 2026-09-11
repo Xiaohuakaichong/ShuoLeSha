@@ -26,7 +26,6 @@ val Caption = TextStyle(
     fontSize = 10.sp,
     lineHeight = 13.sp,
     letterSpacing = 0.2.sp,
-    color = AppColor.textMuted,
 )
 
 val CaptionStrong = TextStyle(
@@ -35,7 +34,6 @@ val CaptionStrong = TextStyle(
     fontSize = 11.sp,
     lineHeight = 15.sp,
     letterSpacing = 0.3.sp,
-    color = AppColor.textSecondary,
 )
 
 val Typography = Typography(
@@ -45,7 +43,6 @@ val Typography = Typography(
         fontSize = 48.sp,
         lineHeight = 52.sp,
         letterSpacing = (-1.2).sp,
-        color = AppColor.textPrimary,
     ),
     headlineLarge = TextStyle(
         fontFamily = Sans,
@@ -53,7 +50,6 @@ val Typography = Typography(
         fontSize = 32.sp,
         lineHeight = 38.sp,
         letterSpacing = (-0.6).sp,
-        color = AppColor.textPrimary,
     ),
     headlineMedium = TextStyle(
         fontFamily = Sans,
@@ -61,7 +57,6 @@ val Typography = Typography(
         fontSize = 20.sp,
         lineHeight = 26.sp,
         letterSpacing = (-0.2).sp,
-        color = AppColor.textPrimary,
     ),
     titleLarge = TextStyle(
         fontFamily = Sans,
@@ -69,21 +64,18 @@ val Typography = Typography(
         fontSize = 17.sp,
         lineHeight = 24.sp,
         letterSpacing = (-0.1).sp,
-        color = AppColor.textPrimary,
     ),
     titleMedium = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.Medium,
         fontSize = 15.sp,
         lineHeight = 21.sp,
-        color = AppColor.textPrimary,
     ),
     titleSmall = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        color = AppColor.textPrimary,
     ),
     bodyLarge = TextStyle(
         fontFamily = Sans,
@@ -91,7 +83,6 @@ val Typography = Typography(
         fontSize = 15.sp,
         lineHeight = 24.sp,
         letterSpacing = 0.15.sp,
-        color = AppColor.textPrimary,
     ),
     bodyMedium = TextStyle(
         fontFamily = Sans,
@@ -99,7 +90,6 @@ val Typography = Typography(
         fontSize = 13.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.1.sp,
-        color = AppColor.textSecondary,
     ),
     bodySmall = TextStyle(
         fontFamily = Sans,
@@ -107,7 +97,6 @@ val Typography = Typography(
         fontSize = 11.sp,
         lineHeight = 15.sp,
         letterSpacing = 0.2.sp,
-        color = AppColor.textMuted,
     ),
     labelLarge = TextStyle(
         fontFamily = JetBrainsMono,
@@ -115,7 +104,6 @@ val Typography = Typography(
         fontSize = 13.sp,
         lineHeight = 18.sp,
         letterSpacing = 0.5.sp,
-        color = AppColor.textPrimary,
     ),
     labelMedium = CaptionStrong,
     labelSmall = Caption,

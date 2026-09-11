@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -82,7 +83,7 @@ import com.example.shuolesa.util.PermissionHelper
 import kotlinx.coroutines.delay
 
 /**
- * v3.0 主导航：记录 / 今日 / 待办 + 常驻录音键。设置是二级页。
+ * 主导航：记录 / 今日 | 录音 | 待办 / 设置。录音键几何居中。
  */
 @Composable
 fun AppNavigation() {
@@ -96,7 +97,6 @@ fun AppNavigation() {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var isRecording by remember { mutableStateOf(AudioCaptureService.isRunning) }
     var selectedRecord by remember { mutableStateOf<AudioRecordEntity?>(null) }
-    var showSettings by remember { mutableStateOf(false) }
     var showModeSelectSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -117,7 +117,7 @@ fun AppNavigation() {
             ContextCompat.startForegroundService(context, intent)
         } else {
             Toast.makeText(context, "请先授予麦克风权限", Toast.LENGTH_SHORT).show()
-            showSettings = true
+            selectedTab = 3
         }
     }
 
@@ -129,8 +129,8 @@ fun AppNavigation() {
         }
     }
 
-    val onOpenSettings = { showSettings = true }
-    val mainChromeVisible = !isRecording && selectedRecord == null && !showSettings
+    val onOpenSettings = { selectedTab = 3 }
+    val mainChromeVisible = !isRecording && selectedRecord == null
 
     BackHandler(enabled = isRecording) {
         (context as? Activity)?.moveTaskToBack(true)
@@ -184,6 +184,10 @@ fun AppNavigation() {
                         onRecordClick = { record -> selectedRecord = record },
                         onOpenSettings = onOpenSettings,
                     )
+                    3 -> NodeSettingsScreen(
+                        prefs = prefs,
+                        permissionHelper = permissionHelper,
+                    )
                 }
             }
         }
@@ -211,19 +215,6 @@ fun AppNavigation() {
             }
         }
 
-        AnimatedVisibility(
-            visible = showSettings && !isRecording,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it }),
-        ) {
-            BackHandler(enabled = showSettings) { showSettings = false }
-            NodeSettingsScreen(
-                prefs = prefs,
-                permissionHelper = permissionHelper,
-                onBack = { showSettings = false },
-            )
-        }
-
         if (showModeSelectSheet) {
             RecordingModeSelectSheet(
                 onDismiss = { showModeSelectSheet = false },
@@ -248,6 +239,7 @@ private fun MainBottomBar(
         BottomTab("记录", Icons.Outlined.GraphicEq),
         BottomTab("今日", Icons.Default.Today),
         BottomTab("待办", Icons.Default.CheckCircleOutline),
+        BottomTab("设置", Icons.Outlined.Settings),
     )
 
     val pillShape = RoundedCornerShape(34.dp)
@@ -284,11 +276,17 @@ private fun MainBottomBar(
                 onClick = { onTabSelected(1) },
                 modifier = Modifier.weight(1f),
             )
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.size(Dimens.recordButton))
             BottomTabItem(
                 tab = items[2],
                 selected = selectedTab == 2,
                 onClick = { onTabSelected(2) },
+                modifier = Modifier.weight(1f),
+            )
+            BottomTabItem(
+                tab = items[3],
+                selected = selectedTab == 3,
+                onClick = { onTabSelected(3) },
                 modifier = Modifier.weight(1f),
             )
         }

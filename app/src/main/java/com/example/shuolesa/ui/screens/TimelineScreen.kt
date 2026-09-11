@@ -181,7 +181,6 @@ fun TimelineScreen(
     ) {
         PageHeader(
             title = "记录",
-            onSettings = onOpenSettings,
             trailing = {
                 val failedCount = streamRecords.count { it.status == AudioRecordEntity.STATUS_FAILED }
                 if (failedCount > 0) {

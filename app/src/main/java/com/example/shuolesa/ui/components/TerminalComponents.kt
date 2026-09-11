@@ -381,6 +381,7 @@ fun SelectableTile(
     }
 }
 
+@Composable
 fun statusColor(status: String): Color = when (status) {
     AudioRecordEntity.STATUS_UPLOADED -> StatusUploaded
     AudioRecordEntity.STATUS_PENDING, AudioRecordEntity.STATUS_UPLOADING -> StatusPending

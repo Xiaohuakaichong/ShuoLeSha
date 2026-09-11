@@ -84,6 +84,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_LAUNCH_STRATEGY = stringPreferencesKey("launch_strategy")
         private val KEY_LIFELOG_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("lifelog_trigger_duration_sec")
         private val KEY_MEETING_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("meeting_trigger_duration_sec")
+        private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
     }
 
     val providerMode: Flow<String> = context.dataStore.data.map { it[KEY_PROVIDER_MODE] ?: ProviderPreset.STEPFUN.id }
@@ -106,6 +107,7 @@ class AppPreferences(private val context: Context) {
     val launchStrategy: Flow<String> = context.dataStore.data.map { it[KEY_LAUNCH_STRATEGY] ?: "default" }
     val lifelogTriggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_LIFELOG_TRIGGER_DURATION] ?: 2 }
     val meetingTriggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_MEETING_TRIGGER_DURATION] ?: 4 }
+    val themeMode: Flow<String> = context.dataStore.data.map { it[KEY_THEME_MODE] ?: "light" }
 
     suspend fun setProviderMode(value: String) {
         context.dataStore.edit { it[KEY_PROVIDER_MODE] = value }
@@ -154,6 +156,10 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setTriggerDuration(value: Int) {
         context.dataStore.edit { it[KEY_TRIGGER_DURATION] = value }
+    }
+
+    suspend fun setThemeMode(value: String) {
+        context.dataStore.edit { it[KEY_THEME_MODE] = value }
     }
 
     // Sync helper methods for background workers & diagnostics
