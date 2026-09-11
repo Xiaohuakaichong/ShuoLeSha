@@ -225,6 +225,7 @@ fun AppNavigation() {
                     repository = repository,
                     prefs = prefs,
                     onBack = { selectedRecord = null },
+                    onDeleted = { selectedRecord = null },
                 )
             }
         }

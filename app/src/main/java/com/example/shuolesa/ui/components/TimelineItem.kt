@@ -1,6 +1,7 @@
 package com.example.shuolesa.ui.components
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -38,10 +39,12 @@ import com.example.shuolesa.util.Formatters
 /**
  * Spine timeline: time + role dot on the left, journal card on the right.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TimelineItem(
     record: AudioRecordEntity,
     onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val durationStr = Formatters.formatDuration(record.durationMs)
@@ -63,7 +66,12 @@ fun TimelineItem(
         modifier = modifier
             .fillMaxWidth()
             .pressScale(pressed, 0.985f)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
     ) {
         Column(
             modifier = Modifier

@@ -43,7 +43,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.QuestionAnswer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -128,6 +130,7 @@ fun AudioPlayerScreen(
     repository: AudioRepository? = null,
     prefs: AppPreferences? = null,
     onBack: () -> Unit,
+    onDeleted: () -> Unit = onBack,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -312,6 +315,42 @@ fun AudioPlayerScreen(
         }
     }
 
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除这条记录？") },
+            text = { Text("录音文件和纪要都会删掉，无法恢复。") },
+            confirmButton = {
+                Text(
+                    text = "删除",
+                    color = DangerRed,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable {
+                            confirmDelete = false
+                            scope.launch(Dispatchers.IO) {
+                                try { opusPlayer.stop() } catch (_: Exception) {}
+                                repository?.deleteRecord(currentRecord)
+                                withContext(Dispatchers.Main) { onDeleted() }
+                            }
+                        }
+                        .padding(Dimens.gapSm),
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "取消",
+                    color = TextSecondary,
+                    modifier = Modifier
+                        .clickable { confirmDelete = false }
+                        .padding(Dimens.gapSm),
+                )
+            },
+        )
+    }
+
     val displayTitle = currentRecord.title?.takeIf { it.isNotBlank() }
         ?: if (isMeeting) "会议录音" else if (isDigest) "每日复盘" else "随身记录"
 
@@ -342,6 +381,15 @@ fun AudioPlayerScreen(
                             contentDescription = "复制 Markdown 纪要",
                             tint = Accent,
                         )
+                    }
+                    if (repository != null) {
+                        IconButton(onClick = { confirmDelete = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Delete,
+                                contentDescription = "删除记录",
+                                tint = DangerRed,
+                            )
+                        }
                     }
                 },
             )

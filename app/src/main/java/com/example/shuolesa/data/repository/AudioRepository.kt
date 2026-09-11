@@ -79,7 +79,18 @@ class AudioRepository(private val dao: AudioRecordDao) {
 
     suspend fun resetPendingAndFailed() = dao.resetPendingAndFailed()
 
-    suspend fun deleteRecord(id: Long) = dao.deleteById(id)
+    suspend fun deleteRecord(id: Long) {
+        val record = dao.getById(id)
+        if (record != null) deleteRecord(record) else dao.deleteById(id)
+    }
+
+    suspend fun deleteRecord(record: AudioRecordEntity) {
+        dao.deleteById(record.id)
+        val path = record.filePath
+        if (path.isNotBlank()) {
+            runCatching { java.io.File(path).takeIf { it.exists() }?.delete() }
+        }
+    }
 
     suspend fun cleanOldRecords(daysOld: Int = 30) {
         val cutoff = System.currentTimeMillis() - (daysOld.toLong() * 24 * 60 * 60 * 1000)

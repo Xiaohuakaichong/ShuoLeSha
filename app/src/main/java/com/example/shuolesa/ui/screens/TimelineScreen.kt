@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,12 +26,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,9 +62,14 @@ import com.example.shuolesa.theme.AccentOn
 import com.example.shuolesa.theme.Dimens
 import com.example.shuolesa.theme.ModeCasual
 import com.example.shuolesa.theme.ModeMeeting
+import com.example.shuolesa.theme.DangerRed
+import com.example.shuolesa.theme.TextSecondary
 import com.example.shuolesa.ui.components.EmptyState
-import com.example.shuolesa.ui.components.FilterChip
+import com.example.shuolesa.ui.components.DatePreset
+import com.example.shuolesa.ui.components.FilterAnchor
 import com.example.shuolesa.ui.components.PageHeader
+import com.example.shuolesa.ui.components.RecordFilter
+import com.example.shuolesa.ui.components.RecordFilterSheet
 import com.example.shuolesa.ui.components.TimelineItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,7 +94,9 @@ fun TimelineScreen(
     }
     val lifelogTriggerDuration by prefs.lifelogTriggerDuration.collectAsState(initial = 2)
 
-    var selectedFilter by remember { mutableStateOf("全部") }
+    var filter by remember { mutableStateOf(RecordFilter()) }
+    var showFilterSheet by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<AudioRecordEntity?>(null) }
     var isImporting by remember { mutableStateOf(false) }
 
     val streamRecords = remember(allRecords) {
@@ -165,16 +174,8 @@ fun TimelineScreen(
         }
     }
 
-    val filteredRecords = remember(streamRecords, selectedFilter) {
-        when (selectedFilter) {
-            "随身" -> streamRecords.filter { !it.isMeeting() }
-            "会议" -> streamRecords.filter { it.isMeeting() }
-            "处理中" -> streamRecords.filter {
-                it.status == AudioRecordEntity.STATUS_PENDING || it.status == AudioRecordEntity.STATUS_UPLOADING
-            }
-            "失败" -> streamRecords.filter { it.status == AudioRecordEntity.STATUS_FAILED }
-            else -> streamRecords
-        }
+    val filteredRecords = remember(streamRecords, filter) {
+        streamRecords.filter { filter.matches(it) }
     }
 
     Column(
@@ -185,6 +186,13 @@ fun TimelineScreen(
         PageHeader(
             title = "记录",
             trailing = {
+                IconButton(onClick = { showFilterSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.FilterList,
+                        contentDescription = "筛选",
+                        tint = if (filter.isDefault) Accent else Accent,
+                    )
+                }
                 val failedCount = streamRecords.count { it.status == AudioRecordEntity.STATUS_FAILED }
                 if (failedCount > 0) {
                     IconButton(
@@ -226,22 +234,32 @@ fun TimelineScreen(
 
         Spacer(modifier = Modifier.height(Dimens.gapSm))
 
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            val tabs = listOf("全部", "随身", "会议", "处理中", "失败")
-            items(tabs) { tab ->
-                val accent = when (tab) {
-                    "会议" -> ModeMeeting
-                    "随身" -> ModeCasual
-                    else -> Accent
-                }
-                FilterChip(
-                    label = tab,
-                    selected = selectedFilter == tab,
-                    onClick = { selectedFilter = tab },
-                    accent = accent,
+            FilterAnchor(
+                label = filter.dateLabel(),
+                active = filter.datePreset != DatePreset.ALL,
+                onClick = { showFilterSheet = true },
+            )
+            FilterAnchor(
+                label = if (filter.mode == "全部") "类型" else filter.mode,
+                active = filter.mode != "全部",
+                onClick = { showFilterSheet = true },
+            )
+            FilterAnchor(
+                label = if (filter.status == "全部") "状态" else filter.status,
+                active = filter.status != "全部",
+                onClick = { showFilterSheet = true },
+            )
+            if (!filter.isDefault) {
+                Text(
+                    text = "重置",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Accent,
+                    modifier = Modifier.clickable { filter = RecordFilter() },
                 )
             }
         }
@@ -253,7 +271,7 @@ fun TimelineScreen(
         } else if (filteredRecords.isEmpty()) {
             EmptyTimeline(
                 hasAnyRecords = streamRecords.isNotEmpty(),
-                selectedFilter = selectedFilter,
+                selectedFilter = if (filter.isDefault) "全部" else listOf(filter.dateLabel(), filter.mode, filter.status).filter { it != "全部" && it != "全部日期" && it != "类型" && it != "状态" }.joinToString(" · ").ifBlank { "当前筛选" },
                 triggerSeconds = lifelogTriggerDuration,
                 onRetryFailed = {
                     scope.launch(Dispatchers.IO) {
@@ -272,10 +290,52 @@ fun TimelineScreen(
                     TimelineItem(
                         record = record,
                         onClick = { onRecordClick(record) },
+                        onLongClick = { pendingDelete = record },
                     )
                 }
             }
         }
+    }
+
+    if (showFilterSheet) {
+        RecordFilterSheet(
+            filter = filter,
+            onChange = { filter = it },
+            onDismiss = { showFilterSheet = false },
+        )
+    }
+
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除这条记录？") },
+            text = { Text("录音文件和纪要都会删掉，无法恢复。") },
+            confirmButton = {
+                Text(
+                    text = "删除",
+                    color = DangerRed,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable {
+                            val toDelete = target
+                            pendingDelete = null
+                            scope.launch(Dispatchers.IO) {
+                                repository.deleteRecord(toDelete)
+                            }
+                        }
+                        .padding(Dimens.gapSm),
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "取消",
+                    color = TextSecondary,
+                    modifier = Modifier
+                        .clickable { pendingDelete = null }
+                        .padding(Dimens.gapSm),
+                )
+            },
+        )
     }
 }
 

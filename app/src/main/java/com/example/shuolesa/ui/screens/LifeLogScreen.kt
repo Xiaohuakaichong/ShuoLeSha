@@ -222,7 +222,7 @@ fun LifeLogScreen(
     ) {
         PageHeader(
             title = "今日",
-            subtitle = "全天复盘",
+            subtitle = dateStr,
             trailing = {
                 if (parsedResult != null) {
                     IconButton(
@@ -242,36 +242,6 @@ fun LifeLogScreen(
                 }
             },
         )
-
-        Spacer(modifier = Modifier.height(Dimens.gapSm))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val dates = listOf(
-                "今天" to System.currentTimeMillis(),
-                "昨天" to System.currentTimeMillis() - 24 * 60 * 60 * 1000L,
-                "前天" to System.currentTimeMillis() - 48 * 60 * 60 * 1000L,
-            )
-            dates.forEach { (label, timeMs) ->
-                val isSelected = Formatters.formatDateOnly(selectedDateMs) == Formatters.formatDateOnly(timeMs)
-                FilterChip(
-                    label = label,
-                    selected = isSelected,
-                    onClick = { if (!isGenerating) selectedDateMs = timeMs },
-                    accent = ModeDigest,
-                )
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = dateStr,
-                style = MaterialTheme.typography.labelSmall,
-                color = ModeDigest,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
 
         Spacer(modifier = Modifier.height(Dimens.gapMd))
 
@@ -333,19 +303,12 @@ fun LifeLogScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(Dimens.gapMd))
-
-        if (dayRecords.isNotEmpty()) {
-            SectionLabel("当天片段 (${dayRecords.size})")
-            Spacer(modifier = Modifier.height(Dimens.gapSm))
-            dayRecords.sortedBy { it.createdAt }.forEach { record ->
-                TimelineItem(
-                    record = record,
-                    onClick = { onRecordClick(record) },
-                )
-                Spacer(modifier = Modifier.height(Dimens.listGap))
-            }
-        }
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
+        Text(
+            text = "当天片段请到「记录」按日期筛选。这里只做今天的复盘。",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMuted,
+        )
 
         val dayTasks = remember(dayRecords) {
             dayRecords.sortedByDescending { it.createdAt }.flatMap { r ->
