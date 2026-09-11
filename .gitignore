@@ -19,6 +19,7 @@ __pycache__/
 build/
 dist/
 *.apk
+/apks/
 node_modules/
 scrcpy/
 启动*.bat

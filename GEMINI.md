@@ -27,8 +27,8 @@
   ```
 - **Android SDK ADB 路径**：
   - `C:\Users\zjsxh\AppData\Local\Android\Sdk\platform-tools\adb.exe`
-- **安装包生成与多端留存**：
-  - 电脑桌面：`C:\Users\zjsxh\Desktop\说了啥-v{versionName}.apk`
-  - 项目根目录：`d:\Project\ShuoLeSha\ShuoLeSa-v{versionName}-debug.apk`
+- **安装包生成与子目录归档规范 (严禁输出至桌面)**：
+  - **严禁输出或复制安装包到电脑桌面**，彻底杜绝桌面文件污染。
+  - **统一收集整理存放于项目子文件夹**：`d:\Project\ShuoLeSha\apks\说了啥-v{versionName}.apk`。
 - **真机静默覆盖安装**：
   - 检测到连接的测试真机（如 `R5CR91Q5YPF`）时，编译后自动通过 `adb -s <deviceId> install -r` 执行热覆盖安装。
