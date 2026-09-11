@@ -4,8 +4,11 @@ import android.content.Context
 import android.util.Log
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.repository.AudioRepository
+import com.example.shuolesa.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.UUID
 
@@ -105,27 +108,38 @@ class ChunkManager(
         }
     }
 
-    fun finalizeSession() {
-        val file = currentFile ?: return
+    fun finalizeSession(): AudioRecordEntity? {
+        val file = currentFile ?: return null
         val durationMs = frameCount * FRAME_DURATION_MS
         val bytesWritten = currentWavWriter?.finish() ?: currentAacWriter?.finish() ?: 0L
 
-        registerChunk(file, chunkIndex - 1, chunkStartTime, durationMs, bytesWritten)
+        val record = buildRecord(file, chunkIndex - 1, chunkStartTime, durationMs, bytesWritten)
+
+        // 同步写入数据库，避免 Service 停止时取消协程造成漏存或上传竞态
+        runBlocking(Dispatchers.IO) {
+            try {
+                val id = repository.insertRecord(record)
+                AppLogger.d(TAG, "Final chunk registered to DB: id=$id, path=${file.absolutePath}, size=${file.length()}")
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "Failed to register final chunk to DB", e)
+            }
+        }
 
         currentFile = null
         currentWavWriter = null
         currentAacWriter = null
         totalRecordingStartTime = 0
+        return record
     }
 
-    private fun registerChunk(file: File, index: Int, startTime: Long, durationMs: Long, sizeBytes: Long) {
+    private fun buildRecord(file: File, index: Int, startTime: Long, durationMs: Long, sizeBytes: Long): AudioRecordEntity {
         val fileSize = if (file.exists()) file.length() else sizeBytes
         val isMeeting = recordingMode == "meeting"
         val fmt = if (isMeeting) meetingFormat else "aac_${lifelogBitrateKbps}k"
         val initialTitle = if (isMeeting) "会议录音 #${index + 1}" else "随身生活记录 #${index + 1}"
         val initialTags = if (isMeeting) "[\"会议\"]" else "[\"LifeLog\"]"
 
-        val record = AudioRecordEntity(
+        return AudioRecordEntity(
             sessionId = sessionId,
             chunkIndex = index,
             filePath = file.absolutePath,
@@ -137,11 +151,16 @@ class ChunkManager(
             title = initialTitle,
             tags = initialTags,
         )
-        scope.launch {
+    }
+
+    private fun registerChunk(file: File, index: Int, startTime: Long, durationMs: Long, sizeBytes: Long) {
+        val record = buildRecord(file, index, startTime, durationMs, sizeBytes)
+        scope.launch(Dispatchers.IO) {
             try {
-                repository.insertRecord(record)
+                val id = repository.insertRecord(record)
+                AppLogger.d(TAG, "Intermediate chunk registered to DB: id=$id, index=$index")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to register chunk in DB", e)
+                AppLogger.e(TAG, "Failed to register intermediate chunk in DB", e)
             }
         }
     }

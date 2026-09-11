@@ -246,20 +246,8 @@ class AudioCaptureService : Service() {
     }
 
     private fun enqueueUpload() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val uploadRequest = OneTimeWorkRequestBuilder<UploadWorker>()
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(this)
-            .enqueueUniqueWork(
-                UploadWorker.WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                uploadRequest,
-            )
+        com.example.shuolesa.util.AppLogger.d(TAG, "Audio recording stopped, triggering UploadWorker.enqueueOrRunNow...")
+        UploadWorker.enqueueOrRunNow(applicationContext)
     }
 
     override fun onDestroy() {

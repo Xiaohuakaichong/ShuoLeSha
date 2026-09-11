@@ -61,6 +61,9 @@ interface AudioRecordDao {
     @Query("UPDATE audio_records SET retryCount = retryCount + 1 WHERE id = :id")
     suspend fun incrementRetryCount(id: Long)
 
+    @Query("UPDATE audio_records SET status = 'PENDING', retryCount = 0 WHERE status IN ('FAILED', 'PENDING')")
+    suspend fun resetPendingAndFailed()
+
     @Query("UPDATE audio_records SET status = :status, title = :title, summary = :summary, agentResult = :agentResult WHERE id = :id")
     suspend fun markFailedWithReason(
         id: Long,

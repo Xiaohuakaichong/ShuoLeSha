@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "shuolesa_prefs")
@@ -155,50 +156,34 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[KEY_TRIGGER_DURATION] = value }
     }
 
-    // Sync helper methods for background workers
+    // Sync helper methods for background workers & diagnostics
     suspend fun getBaseUrlSync(): String {
-        var result = ProviderPreset.STEPFUN.defaultBaseUrl
-        context.dataStore.edit { result = it[KEY_BASE_URL] ?: ProviderPreset.STEPFUN.defaultBaseUrl }
-        return result
+        return context.dataStore.data.first()[KEY_BASE_URL] ?: ProviderPreset.STEPFUN.defaultBaseUrl
     }
 
     suspend fun getApiKeySync(): String {
-        var result = DEFAULT_API_KEY
-        context.dataStore.edit {
-            val k = it[KEY_API_KEY]
-            result = if (k.isNullOrBlank()) DEFAULT_API_KEY else k
-        }
-        return result
+        val k = context.dataStore.data.first()[KEY_API_KEY]
+        return if (k.isNullOrBlank()) DEFAULT_API_KEY else k
     }
 
     suspend fun getAsrModelSync(): String {
-        var result = ProviderPreset.STEPFUN.defaultAsrModel
-        context.dataStore.edit { result = it[KEY_ASR_MODEL] ?: ProviderPreset.STEPFUN.defaultAsrModel }
-        return result
+        return context.dataStore.data.first()[KEY_ASR_MODEL] ?: ProviderPreset.STEPFUN.defaultAsrModel
     }
 
     suspend fun getLlmModelSync(): String {
-        var result = ProviderPreset.STEPFUN.defaultLlmModel
-        context.dataStore.edit { result = it[KEY_LLM_MODEL] ?: ProviderPreset.STEPFUN.defaultLlmModel }
-        return result
+        return context.dataStore.data.first()[KEY_LLM_MODEL] ?: ProviderPreset.STEPFUN.defaultLlmModel
     }
 
     suspend fun getSystemPromptSync(): String {
-        var result = DEFAULT_SYSTEM_PROMPT
-        context.dataStore.edit { result = it[KEY_SYSTEM_PROMPT] ?: DEFAULT_SYSTEM_PROMPT }
-        return result
+        return context.dataStore.data.first()[KEY_SYSTEM_PROMPT] ?: DEFAULT_SYSTEM_PROMPT
     }
 
     suspend fun isKeepLocalAudioSync(): Boolean {
-        var result = true
-        context.dataStore.edit { result = it[KEY_KEEP_LOCAL_AUDIO] ?: true }
-        return result
+        return context.dataStore.data.first()[KEY_KEEP_LOCAL_AUDIO] ?: true
     }
 
     suspend fun isHapticEnabledSync(): Boolean {
-        var result = true
-        context.dataStore.edit { result = it[KEY_HAPTIC_ENABLED] ?: true }
-        return result
+        return context.dataStore.data.first()[KEY_HAPTIC_ENABLED] ?: true
     }
 
     suspend fun setRecordingMode(mode: String) {

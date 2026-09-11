@@ -88,6 +88,13 @@ import com.example.shuolesa.ui.components.TerminalCard
 import com.example.shuolesa.ui.components.TerminalOutlineButton
 import com.example.shuolesa.ui.components.TerminalTextField
 import com.example.shuolesa.util.PermissionHelper
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.example.shuolesa.data.db.AppDatabase
+import com.example.shuolesa.data.repository.AudioRepository
+import com.example.shuolesa.network.UploadWorker
+import com.example.shuolesa.util.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1121,6 +1128,11 @@ private fun AiEngineSettingsContent(
 private fun AboutSettingsContent(
     permissionHelper: PermissionHelper,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isExporting by remember { mutableStateOf(false) }
+    var isRetrying by remember { mutableStateOf(false) }
+
     SectionLabel("关于应用与设计")
     Spacer(modifier = Modifier.height(Dimens.gapSm))
 
@@ -1151,7 +1163,7 @@ private fun AboutSettingsContent(
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v2.1.4",
+                    text = "v2.1.5",
                     style = MaterialTheme.typography.labelSmall,
                     color = MintCyan,
                     fontWeight = FontWeight.Bold,
@@ -1160,10 +1172,100 @@ private fun AboutSettingsContent(
         }
         Spacer(modifier = Modifier.height(Dimens.gapSm))
         Text(
-            text = "✨ 核心特性：\n• 🌿 LifeLog 极小文件 / 💼 会议高保真音频分级\n• 4 栏全功能工作台（记忆流 · 生活手记 · 待办 · 设置）\n• 方便快捷的设置 Tab 分页分类交互\n• 无障碍双阶触觉长按盲操（单脉冲/双脉冲自选手感）\n• 录制启动策略自由切换（固定默认 / 每次单独选择）\n• 全局交互式待办勾选闭环与 Markdown 一键导出",
+            text = "✨ 核心特性：\n• 🛠️ 运行诊断与日志一键导出 / 分享（快速排查排队与网络状况）\n• 🌿 LifeLog 极小文件 / 💼 会议高保真音频分级\n• 4 栏全功能工作台（记忆流 · 生活手记 · 待办 · 设置）\n• 方便快捷的设置 Tab 分页分类交互\n• 无障碍双阶触觉长按盲操（单脉冲/双脉冲自选手感）\n• 录制启动策略自由切换（固定默认 / 每次单独选择）\n• 全局交互式待办勾选闭环与 Markdown 一键导出",
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
             lineHeight = 20.sp,
+        )
+    }
+
+    Spacer(modifier = Modifier.height(Dimens.gapMd))
+
+    SectionLabel("🛠️ 运行诊断与日志导出")
+    Spacer(modifier = Modifier.height(Dimens.gapSm))
+
+    TerminalCard {
+        Text(
+            text = "运行诊断与日志导出",
+            style = MaterialTheme.typography.titleMedium,
+            color = TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "当遇到录音卡在“排队中”、网络受限或识别失败时，可在此导出完整诊断日志或立即发起即时重试。",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMuted,
+            lineHeight = 18.sp,
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Diagnostic Actions Row: Copy Report & Share Log File
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TerminalOutlineButton(
+                text = if (isExporting) "正在提取..." else "📋 一键复制日志",
+                onClick = {
+                    if (!isExporting) {
+                        isExporting = true
+                        scope.launch {
+                            try {
+                                AppLogger.copyDiagnosticReportToClipboard(context)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "复制失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                isExporting = false
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+
+            TerminalOutlineButton(
+                text = "📤 导出并分享",
+                onClick = {
+                    scope.launch {
+                        try {
+                            AppLogger.shareDiagnosticReport(context)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "分享失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Immediate retry button
+        TerminalOutlineButton(
+            text = if (isRetrying) "正在重试队列中..." else "🔄 立即重试所有排队/失败录音",
+            onClick = {
+                if (!isRetrying) {
+                    isRetrying = true
+                    scope.launch {
+                        Toast.makeText(context, "正在启动前台即时重试处理...", Toast.LENGTH_SHORT).show()
+                        val (success, fail) = withContext(Dispatchers.IO) {
+                            val db = AppDatabase.getInstance(context)
+                            val repo = AudioRepository(db.audioRecordDao())
+                            repo.resetPendingAndFailed()
+                            UploadWorker.processPendingUploadsManual(context)
+                        }
+                        isRetrying = false
+                        if (fail == 0) {
+                            Toast.makeText(context, "✅ 重试完成：已成功提炼 $success 条录音", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "⚠️ 重试结束：成功 $success 条，失败 $fail 条，可查看诊断日志", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 

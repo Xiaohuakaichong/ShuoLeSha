@@ -180,18 +180,7 @@ fun TimelineScreen(
                 repository.insertRecord(record)
 
                 // 5. 触发后台转写与结构化提炼
-                val constraints = Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-                val uploadRequest = OneTimeWorkRequestBuilder<UploadWorker>()
-                    .setConstraints(constraints)
-                    .build()
-                WorkManager.getInstance(context)
-                    .enqueueUniqueWork(
-                        UploadWorker.WORK_NAME,
-                        ExistingWorkPolicy.REPLACE,
-                        uploadRequest,
-                    )
+                UploadWorker.enqueueOrRunNow(context)
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "音频导入成功，正在后台转写提炼...", Toast.LENGTH_SHORT).show()

@@ -77,6 +77,8 @@ class AudioRepository(private val dao: AudioRecordDao) {
 
     suspend fun incrementRetry(id: Long) = dao.incrementRetryCount(id)
 
+    suspend fun resetPendingAndFailed() = dao.resetPendingAndFailed()
+
     suspend fun deleteRecord(id: Long) = dao.deleteById(id)
 
     suspend fun cleanOldRecords(daysOld: Int = 30) {
