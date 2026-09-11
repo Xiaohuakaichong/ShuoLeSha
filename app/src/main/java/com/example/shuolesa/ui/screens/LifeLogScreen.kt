@@ -337,16 +337,20 @@ fun LifeLogScreen(
                     }
                     Column {
                         Text(
-                            text = if (parsedResult != null) "✨ 今日手记已生成" else "🎙️ 今日已捕捉 ${dayRecords.size} 段声音",
+                            text = if (parsedResult != null) "✨ 今日手记已生成" else "🎙️ 已记录 ${dayRecords.size} 段声音",
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = if (dayRecords.isEmpty()) "该日期暂未记录音频片段" else "总计时长：${Formatters.formatDuration(dayRecords.sumOf { it.durationMs })}",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted,
                             fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

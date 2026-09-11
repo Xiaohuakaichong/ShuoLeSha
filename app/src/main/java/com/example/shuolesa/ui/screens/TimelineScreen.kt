@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
@@ -219,73 +220,42 @@ fun TimelineScreen(
     ) {
         PageHeader(
             title = "说了啥 · 记忆流",
-            subtitle = "随手语音转写与 AI 智能提炼 · v2.0",
+            subtitle = "随手语音转写与 AI 智能提炼",
             trailing = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Dimens.fieldRadius))
+                        .background(MintCyan.copy(alpha = 0.12f))
+                        .border(1.dp, MintCyan.copy(alpha = 0.35f), RoundedCornerShape(Dimens.fieldRadius))
+                        .clickable(enabled = !isImporting) {
+                            audioPickerLauncher.launch("audio/*")
+                        }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
                 ) {
-                    val isLifeLogMode = recordingMode == "lifelog"
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (isLifeLogMode) NeonGreen.copy(alpha = 0.15f) else MintCyan.copy(alpha = 0.15f))
-                            .border(1.dp, if (isLifeLogMode) NeonGreen.copy(alpha = 0.35f) else MintCyan.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
-                            .clickable {
-                                scope.launch {
-                                    val next = if (isLifeLogMode) "meeting" else "lifelog"
-                                    prefs.setRecordingMode(next)
-                                    Toast.makeText(
-                                        context,
-                                        if (next == "lifelog") "已切换至 🌿 LifeLog 随身模式 (极小文件)" else "已切换至 💼 会议模式 (高保真大文件)",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
-                        Text(
-                            text = if (isLifeLogMode) "🌿 随身" else "💼 会议",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isLifeLogMode) NeonGreen else MintCyan,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MintCyan.copy(alpha = 0.15f))
-                            .clickable(enabled = !isImporting) {
-                                audioPickerLauncher.launch("audio/*")
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            if (isImporting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    color = MintCyan,
-                                    strokeWidth = 2.dp,
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.FileUpload,
-                                    contentDescription = "导入音频",
-                                    tint = MintCyan,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                            }
-                            Text(
-                                text = if (isImporting) "导入中..." else "导入",
-                                style = MaterialTheme.typography.labelSmall,
+                        if (isImporting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
                                 color = MintCyan,
-                                fontWeight = FontWeight.SemiBold,
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.FileUpload,
+                                contentDescription = "导入音频",
+                                tint = MintCyan,
+                                modifier = Modifier.size(16.dp),
                             )
                         }
+                        Text(
+                            text = if (isImporting) "导入中..." else "导入音频",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MintCyan,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
             },
@@ -347,22 +317,26 @@ fun TimelineScreen(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "🌿 LifeLog 每日生活手记",
+                            text = "🌿 生活手记 · 每日复盘",
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (todayLifeLog != null)
-                                "今日已复盘 · 点击查看闲聊亮点、轨迹与待办"
+                                "今日已复盘 · 点击查看闲聊亮点与待办"
                             else
-                                "今日已捕捉 ${todayRecords.size} 段声音 · 点击一键生成全天手记",
+                                "今日已捕捉 ${todayRecords.size} 段声音 · 点击一键生成",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted,
                             fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

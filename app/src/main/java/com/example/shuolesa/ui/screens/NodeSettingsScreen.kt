@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -166,7 +167,7 @@ fun NodeSettingsScreen(
         ) {
             val tabs = listOf(
                 Pair(0, "🎙️ 录音"),
-                Pair(1, "🦯 盲操"),
+                Pair(1, "⚡ 盲操"),
                 Pair(2, "🧠 AI引擎"),
                 Pair(3, "ℹ️ 关于"),
             )
@@ -192,14 +193,20 @@ fun NodeSettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(Dimens.gapLg))
+        Spacer(modifier = Modifier.height(Dimens.gapMd))
 
         // Independent scrollable content container for selected Tab
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .clipToBounds(),
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 4.dp),
+            ) {
             when (selectedSettingsTab) {
                 0 -> RecordingSettingsContent(
                     launchStrategy = launchStrategy,
@@ -273,6 +280,7 @@ fun NodeSettingsScreen(
             Spacer(modifier = Modifier.height(Dimens.pageBottomNavClearance))
         }
     }
+}
 }
 
 // -----------------------------------------------------------------------------
@@ -549,9 +557,9 @@ private fun LifeLogBitrateSection(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         listOf(
-            Triple(16, "16 kbps", "极省 · ~7MB/h"),
-            Triple(24, "24 kbps", "标准 · ~10MB/h"),
-            Triple(32, "32 kbps", "清晰 · ~14MB/h"),
+            Triple(16, "16k 极省", "约 7MB/h"),
+            Triple(24, "24k 标准", "约 10MB/h"),
+            Triple(32, "32k 清晰", "约 14MB/h"),
         ).forEach { (kbps, label, est) ->
             val isSel = lifelogBitrateKbps == kbps
             Box(
@@ -563,7 +571,7 @@ private fun LifeLogBitrateSection(
                     .background(if (isSel) NeonGreen.copy(alpha = 0.15f) else CardElevated)
                     .border(1.dp, if (isSel) NeonGreen else SurfaceBorder, RoundedCornerShape(6.dp))
                     .clickable { onSetLifelogBitrateKbps(kbps) }
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                    .padding(vertical = 8.dp, horizontal = 2.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -572,6 +580,7 @@ private fun LifeLogBitrateSection(
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isSel) NeonGreen else TextPrimary,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -579,6 +588,7 @@ private fun LifeLogBitrateSection(
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isSel) NeonGreen.copy(alpha = 0.85f) else TextMuted,
                         fontSize = 9.sp,
+                        maxLines = 1,
                     )
                 }
             }
@@ -605,8 +615,8 @@ private fun MeetingFormatSection(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         listOf(
-            Triple("wav", "无损 WAV", "16kHz · ~115MB/h"),
-            Triple("aac_64k", "高清 AAC", "64kbps · ~28MB/h"),
+            Triple("wav", "无损 WAV", "16kHz · 115MB/h"),
+            Triple("aac_64k", "高清 AAC", "64kbps · 28MB/h"),
         ).forEach { (fmt, label, est) ->
             val isSel = meetingFormat == fmt
             Box(
@@ -618,7 +628,7 @@ private fun MeetingFormatSection(
                     .background(if (isSel) MintCyan.copy(alpha = 0.15f) else CardElevated)
                     .border(1.dp, if (isSel) MintCyan else SurfaceBorder, RoundedCornerShape(6.dp))
                     .clickable { onSetMeetingFormat(fmt) }
-                    .padding(vertical = 8.dp, horizontal = 6.dp),
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -627,6 +637,7 @@ private fun MeetingFormatSection(
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isSel) MintCyan else TextPrimary,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -634,6 +645,7 @@ private fun MeetingFormatSection(
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isSel) MintCyan.copy(alpha = 0.85f) else TextMuted,
                         fontSize = 9.sp,
+                        maxLines = 1,
                     )
                 }
             }
@@ -1140,7 +1152,7 @@ private fun AboutSettingsContent(
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v2.1.1",
+                    text = "v2.1.2",
                     style = MaterialTheme.typography.labelSmall,
                     color = MintCyan,
                     fontWeight = FontWeight.Bold,
