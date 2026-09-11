@@ -15,18 +15,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
-import com.example.shuolesa.theme.NeonGreen
-import com.example.shuolesa.theme.NeonGreenGlow
-import com.example.shuolesa.theme.PureBlack
+import androidx.compose.ui.graphics.Color
+import com.example.shuolesa.theme.Accent
+import com.example.shuolesa.theme.AppColor
 
 /**
- * Pulsing neon green dot with breathing glow effect.
- * Used as the central recording indicator.
+ * Breathing recording beacon. Color follows the current recording role.
  */
 @Composable
 fun PulsingDot(
     modifier: Modifier = Modifier,
     size: Int = 120,
+    color: Color = Accent,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
 
@@ -76,18 +76,17 @@ fun PulsingDot(
 
         // Outer expanding ring
         drawCircle(
-            color = NeonGreen.copy(alpha = outerRingAlpha),
+            color = color.copy(alpha = outerRingAlpha),
             radius = coreRadius * outerRingScale,
             center = center,
         )
 
-        // Glow halo
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    NeonGreen.copy(alpha = glowAlpha),
-                    NeonGreenGlow.copy(alpha = glowAlpha * 0.3f),
-                    PureBlack.copy(alpha = 0f),
+                    color.copy(alpha = glowAlpha),
+                    color.copy(alpha = glowAlpha * 0.2f),
+                    AppColor.background.copy(alpha = 0f),
                 ),
                 center = center,
                 radius = coreRadius * 3 * scale,
@@ -96,10 +95,9 @@ fun PulsingDot(
             center = center,
         )
 
-        // Core dot
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(NeonGreen, NeonGreen.copy(alpha = 0.8f)),
+                colors = listOf(color, color.copy(alpha = 0.8f)),
                 center = center,
                 radius = coreRadius * scale,
             ),

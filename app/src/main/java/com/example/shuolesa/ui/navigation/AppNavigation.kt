@@ -1,31 +1,40 @@
 package com.example.shuolesa.ui.navigation
 
+import android.app.Activity
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,13 +42,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import com.example.shuolesa.ui.components.RecordingModeSelectSheet
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.shuolesa.data.db.AppDatabase
@@ -47,12 +62,16 @@ import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
 import com.example.shuolesa.service.AudioCaptureService
-import com.example.shuolesa.theme.BgDark
-import com.example.shuolesa.theme.DarkSurface
-import com.example.shuolesa.theme.MintCyan
-import com.example.shuolesa.theme.NeonGreen
-import com.example.shuolesa.theme.PureBlack
+import com.example.shuolesa.theme.Accent
+import com.example.shuolesa.theme.AccentOn
+import com.example.shuolesa.theme.AppColor
+import com.example.shuolesa.theme.Dimens
+import com.example.shuolesa.theme.InkAtmosphere
+import com.example.shuolesa.theme.ModeCasual
+import com.example.shuolesa.ui.components.pressScale
 import com.example.shuolesa.theme.TextMuted
+import com.example.shuolesa.theme.TextPrimary
+import com.example.shuolesa.ui.components.RecordingModeSelectSheet
 import com.example.shuolesa.ui.screens.ActiveRecordingScreen
 import com.example.shuolesa.ui.screens.AudioPlayerScreen
 import com.example.shuolesa.ui.screens.LifeLogScreen
@@ -63,7 +82,7 @@ import com.example.shuolesa.util.PermissionHelper
 import kotlinx.coroutines.delay
 
 /**
- * 主导航：底部 Tab + 录音/播放覆盖层。
+ * v3.0 主导航：记录 / 今日 / 待办 + 常驻录音键。设置是二级页。
  */
 @Composable
 fun AppNavigation() {
@@ -74,9 +93,10 @@ fun AppNavigation() {
     val permissionHelper = remember { PermissionHelper(context) }
 
     val launchStrategy by prefs.launchStrategy.collectAsState(initial = "default")
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var isRecording by remember { mutableStateOf(AudioCaptureService.isRunning) }
     var selectedRecord by remember { mutableStateOf<AudioRecordEntity?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
     var showModeSelectSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -87,7 +107,7 @@ fun AppNavigation() {
     }
 
     val triggerStartRecord: (String?) -> Unit = { modeOverride ->
-        if (permissionHelper.hasAllPermissions()) {
+        if (permissionHelper.hasMicPermission()) {
             val intent = Intent(context, AudioCaptureService::class.java).apply {
                 action = AudioCaptureService.ACTION_START
                 if (modeOverride != null) {
@@ -96,7 +116,8 @@ fun AppNavigation() {
             }
             ContextCompat.startForegroundService(context, intent)
         } else {
-            Toast.makeText(context, "请先在设置中授予录音与麦克风权限", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "请先授予麦克风权限", Toast.LENGTH_SHORT).show()
+            showSettings = true
         }
     }
 
@@ -108,29 +129,39 @@ fun AppNavigation() {
         }
     }
 
+    val onOpenSettings = { showSettings = true }
+    val mainChromeVisible = !isRecording && selectedRecord == null && !showSettings
+
+    BackHandler(enabled = isRecording) {
+        (context as? Activity)?.moveTaskToBack(true)
+    }
+
+    var lastBackExitAt by remember { mutableLongStateOf(0L) }
+    BackHandler(enabled = mainChromeVisible) {
+        val now = System.currentTimeMillis()
+        if (now - lastBackExitAt < 2000L) {
+            (context as? Activity)?.finish()
+        } else {
+            lastBackExitAt = now
+            Toast.makeText(context, "再按一次退出", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(isRecording) {
+        if (isRecording) showModeSelectSheet = false
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
+        InkAtmosphere()
         Scaffold(
-            containerColor = BgDark,
-            floatingActionButton = {
-                if (!isRecording && selectedTab in 0..1) {
-                    FloatingActionButton(
-                        onClick = onStartRecordClick,
-                        containerColor = MintCyan,
-                        contentColor = BgDark,
-                        shape = CircleShape,
-                        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "快捷启动录音",
-                            modifier = Modifier.size(28.dp),
-                        )
-                    }
-                }
-            },
+            containerColor = Color.Transparent,
             bottomBar = {
-                if (!isRecording) {
-                    BottomNav(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+                if (mainChromeVisible) {
+                    MainBottomBar(
+                        selectedTab = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        onRecordClick = onStartRecordClick,
+                    )
                 }
             },
         ) { paddingValues ->
@@ -140,20 +171,18 @@ fun AppNavigation() {
                         repository = repository,
                         prefs = prefs,
                         onRecordClick = { record -> selectedRecord = record },
-                        onStartRecord = onStartRecordClick,
-                        onNavigateToLifeLog = { selectedTab = 1 },
+                        onOpenSettings = onOpenSettings,
                     )
                     1 -> LifeLogScreen(
                         repository = repository,
                         prefs = prefs,
+                        onOpenSettings = onOpenSettings,
+                        onRecordClick = { record -> selectedRecord = record },
                     )
                     2 -> TasksScreen(
                         repository = repository,
                         onRecordClick = { record -> selectedRecord = record },
-                    )
-                    3 -> NodeSettingsScreen(
-                        prefs = prefs,
-                        permissionHelper = permissionHelper,
+                        onOpenSettings = onOpenSettings,
                     )
                 }
             }
@@ -182,6 +211,19 @@ fun AppNavigation() {
             }
         }
 
+        AnimatedVisibility(
+            visible = showSettings && !isRecording,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it }),
+        ) {
+            BackHandler(enabled = showSettings) { showSettings = false }
+            NodeSettingsScreen(
+                prefs = prefs,
+                permissionHelper = permissionHelper,
+                onBack = { showSettings = false },
+            )
+        }
+
         if (showModeSelectSheet) {
             RecordingModeSelectSheet(
                 onDismiss = { showModeSelectSheet = false },
@@ -194,40 +236,132 @@ fun AppNavigation() {
     }
 }
 
+private data class BottomTab(val label: String, val icon: ImageVector)
+
 @Composable
-private fun BottomNav(
+private fun MainBottomBar(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
+    onRecordClick: () -> Unit,
 ) {
-    data class NavItem(val label: String, val icon: ImageVector)
-
     val items = listOf(
-        NavItem("记忆流", Icons.Default.Timeline),
-        NavItem("生活手记", Icons.Default.AutoAwesome),
-        NavItem("待办", Icons.Default.CheckCircleOutline),
-        NavItem("设置", Icons.Default.Settings),
+        BottomTab("记录", Icons.Outlined.GraphicEq),
+        BottomTab("今日", Icons.Default.Today),
+        BottomTab("待办", Icons.Default.CheckCircleOutline),
     )
 
-    NavigationBar(
-        containerColor = DarkSurface,
+    val pillShape = RoundedCornerShape(34.dp)
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .padding(start = Dimens.gapMd, end = Dimens.gapMd, bottom = Dimens.gapSm),
     ) {
-        items.forEachIndexed { index, item ->
-            NavigationBarItem(
-                selected = selectedTab == index,
-                onClick = { onTabSelected(index) },
-                icon = { Icon(item.icon, contentDescription = item.label) },
-                label = { Text(item.label) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = NeonGreen,
-                    selectedTextColor = NeonGreen,
-                    unselectedIconColor = TextMuted,
-                    unselectedTextColor = TextMuted,
-                    indicatorColor = NeonGreen.copy(alpha = 0.15f),
-                ),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(Dimens.bottomBarHeight)
+                .shadow(
+                    elevation = 18.dp,
+                    shape = pillShape,
+                    ambientColor = AppColor.accentShadow,
+                    spotColor = AppColor.shadowTint,
+                )
+                .clip(pillShape)
+                .background(AppColor.surfaceGlass)
+                .border(Dimens.borderThin, AppColor.outline, pillShape),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BottomTabItem(
+                tab = items[0],
+                selected = selectedTab == 0,
+                onClick = { onTabSelected(0) },
+                modifier = Modifier.weight(1f),
+            )
+            BottomTabItem(
+                tab = items[1],
+                selected = selectedTab == 1,
+                onClick = { onTabSelected(1) },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            BottomTabItem(
+                tab = items[2],
+                selected = selectedTab == 2,
+                onClick = { onTabSelected(2) },
+                modifier = Modifier.weight(1f),
             )
         }
+
+        val recordInteraction = remember { MutableInteractionSource() }
+        val recordPressed by recordInteraction.collectIsPressedAsState()
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = (-18).dp)
+                .pressScale(recordPressed, 0.94f)
+                .size(Dimens.recordButton)
+                .shadow(
+                    elevation = Dimens.fabElevation,
+                    shape = CircleShape,
+                    ambientColor = AppColor.accentShadow,
+                    spotColor = AppColor.accentShadow,
+                )
+                .clip(CircleShape)
+                .background(Accent)
+                .clickable(
+                    interactionSource = recordInteraction,
+                    indication = null,
+                    onClick = onRecordClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = "开始录音",
+                tint = AccentOn,
+                modifier = Modifier.size(Dimens.fabIconSize),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BottomTabItem(
+    tab: BottomTab,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Column(
+        modifier = modifier
+            .pressScale(pressed, 0.96f)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(18.dp))
+                .background(if (selected) Accent.copy(alpha = 0.14f) else Color.Transparent)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = tab.icon,
+                contentDescription = tab.label,
+                tint = if (selected) Accent else TextMuted,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = tab.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) TextPrimary else TextMuted,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        )
     }
 }

@@ -3,31 +3,70 @@ package com.example.shuolesa.theme
 import androidx.compose.ui.unit.dp
 
 /**
- * Shared spacing, radius, and size tokens for a consistent terminal UI.
+ * Shared spacing, radius, and size tokens.
+ * Screens should consume these instead of inventing padding or icon sizes.
  */
 object Dimens {
+    // Spacing scale
+    val spaceXs = 4.dp
+    val spaceSm = 8.dp
+    val spaceMd = 16.dp
+    val spaceLg = 24.dp
+    val spaceXl = 32.dp
+    val spaceXxl = 40.dp
+
+    val gapXs = spaceXs
+    val gapSm = spaceSm
+    val gapMd = spaceMd
+    val gapLg = spaceLg
+    val gapXl = spaceXl
+
     // Page layout
-    val pagePaddingH = 20.dp
-    val pagePaddingV = 16.dp
-    val pageBottomNavClearance = 80.dp
+    val pagePaddingH = 24.dp
+    val pagePaddingV = 24.dp
+    val pageBottomNavClearance = 96.dp
 
-    // Gaps
-    val gapXs = 4.dp
-    val gapSm = 8.dp
-    val gapMd = 16.dp
-    val gapLg = 24.dp
-    val gapXl = 32.dp
+    // Radius
+    val radiusXs = 6.dp
+    val radiusSm = 8.dp
+    val radiusMd = 12.dp
+    val radiusLg = 16.dp
+    val radiusXl = 20.dp
+    val radius2xl = 28.dp
+    val radiusFull = 999.dp
+    val cardRadius = radius2xl
+    val fieldRadius = radiusMd
+    val chipRadius = radiusFull
+    val sheetRadius = radiusXl
+    val pillRadius = radiusFull
 
-    // Cards / fields
-    val cardRadius = 12.dp
-    val fieldRadius = 8.dp
-    val cardPadding = 16.dp
-    val cardPaddingVCompact = 12.dp
+    val cardPadding = 20.dp
+    val cardPaddingVCompact = 14.dp
+
+    // Icons
+    val iconXs = 12.dp
+    val iconSm = 16.dp
+    val iconMd = 20.dp
+    val iconLg = 24.dp
+    val iconXl = 28.dp
+    val iconXxl = 32.dp
+
+    // Bottom nav / FAB / record button
+    val bottomNavHeight = 72.dp
+    val bottomBarHeight = bottomNavHeight
+    val fabSize = 64.dp
+    val fabIconSize = 30.dp
+    val fabElevation = 10.dp
+    val recordButton = fabSize
 
     // Controls
     val buttonHeight = 48.dp
     val buttonHeightSm = 40.dp
+    val iconButton = 40.dp
     val iconButtonLg = 72.dp
+    val chipPaddingH = 8.dp
+    val chipPaddingV = 4.dp
+    val listGap = 20.dp
     val statusDot = 8.dp
     val statusDotLg = 10.dp
 

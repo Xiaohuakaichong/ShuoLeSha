@@ -45,13 +45,15 @@ data class AudioRecordEntity(
         return tags?.contains("每日复盘") == true || sessionId.startsWith("lifelog_")
     }
 
-    fun getDisplayModeTag(): String {
+    fun getDisplayModeLabel(): String {
         return when {
-            isDailyLifeLogSummary() -> "🌿 每日复盘"
-            isMeeting() -> "💼 会议录音"
-            else -> "🌿 LifeLog 随身"
+            isDailyLifeLogSummary() -> "复盘"
+            isMeeting() -> "会议"
+            else -> "随身"
         }
     }
+
+    fun getDisplayModeTag(): String = getDisplayModeLabel()
 
     fun getDisplayFormatInfo(): String {
         val ext = if (filePath.isNotBlank()) java.io.File(filePath).extension.lowercase() else ""

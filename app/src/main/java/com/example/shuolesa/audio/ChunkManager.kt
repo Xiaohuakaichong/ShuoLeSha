@@ -137,7 +137,7 @@ class ChunkManager(
         val isMeeting = recordingMode == "meeting"
         val fmt = if (isMeeting) meetingFormat else "aac_${lifelogBitrateKbps}k"
         val initialTitle = if (isMeeting) "会议录音 #${index + 1}" else "随身生活记录 #${index + 1}"
-        val initialTags = if (isMeeting) "[\"会议\"]" else "[\"LifeLog\"]"
+        val initialTags = if (isMeeting) "[\"会议\"]" else "[\"随身\"]"
 
         return AudioRecordEntity(
             sessionId = sessionId,

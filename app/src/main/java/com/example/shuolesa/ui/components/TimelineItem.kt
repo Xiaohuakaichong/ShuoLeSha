@@ -1,9 +1,8 @@
 package com.example.shuolesa.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,43 +13,30 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import com.example.shuolesa.data.db.AudioRecordEntity
-import com.example.shuolesa.theme.CardElevated
+import com.example.shuolesa.data.model.ActionItemModel
 import com.example.shuolesa.theme.Dimens
-import com.example.shuolesa.theme.ElectricBlue
-import com.example.shuolesa.theme.MintCyan
-import com.example.shuolesa.theme.NeonGreen
-import com.example.shuolesa.theme.SurfaceBorder
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
+import com.example.shuolesa.theme.recordRoleColor
 import com.example.shuolesa.util.Formatters
-import org.json.JSONArray
 
 /**
- * 现代智能便签卡片：展示时间、时长、AI 总结、待办事项、标签及转写展开。
+ * Spine timeline: time + role dot on the left, journal card on the right.
  */
 @Composable
 fun TimelineItem(
@@ -58,278 +44,109 @@ fun TimelineItem(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val timeStr = Formatters.formatListDate(record.createdAt)
     val durationStr = Formatters.formatDuration(record.durationMs)
-    var expandedTranscription by remember { mutableStateOf(false) }
-
-    // Parse action items & tags from JSON if available
     val actionItems = remember(record.actionItems) {
-        com.example.shuolesa.data.model.ActionItemModel.fromJsonString(record.actionItems)
+        ActionItemModel.fromJsonString(record.actionItems)
     }
-
-    val tags = remember(record.tags) {
-        val list = mutableListOf<String>()
-        if (!record.tags.isNullOrBlank()) {
-            try {
-                val json = JSONArray(record.tags)
-                for (i in 0 until json.length()) {
-                    list.add(json.getString(i))
-                }
-            } catch (_: Exception) {
-                record.tags.split(",", " ").filter { it.isNotBlank() }.forEach { list.add(it) }
-            }
-        }
-        list
-    }
-
-    val isLifeLogSummary = record.isDailyLifeLogSummary()
+    val isDigest = record.isDailyLifeLogSummary()
     val isMeeting = record.isMeeting()
+    val accent = recordRoleColor(isDigest, isMeeting)
+    val pendingCount = actionItems.count { !it.isDone }
+    val titleText = record.title?.takeIf { it.isNotBlank() }
+        ?: if (isMeeting) "会议录音" else "随身记录"
+    val summaryText = record.summary?.takeIf { it.isNotBlank() }
+        ?: record.transcription?.takeIf { it.isNotBlank() }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
 
-    TerminalCard(
-        modifier = modifier.clickable(onClick = onClick),
-        borderColor = if (isLifeLogSummary) NeonGreen.copy(alpha = 0.45f) else if (isMeeting) MintCyan.copy(alpha = 0.35f) else SurfaceBorder,
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .pressScale(pressed, 0.985f)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
     ) {
-        // Top Header: Time, Mode Badge, Duration & Format pill, Status Badge
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .width(52.dp)
+                .padding(top = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = timeStr,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (isLifeLogSummary) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(NeonGreen.copy(alpha = 0.15f))
-                            .border(1.dp, NeonGreen.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = "🌿 全天复盘",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = NeonGreen,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (isMeeting) MintCyan.copy(alpha = 0.15f) else NeonGreen.copy(alpha = 0.12f))
-                            .border(1.dp, if (isMeeting) MintCyan.copy(alpha = 0.35f) else NeonGreen.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = if (isMeeting) "💼 会议" else "🌿 随身",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isMeeting) MintCyan else NeonGreen,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(CardElevated)
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = "⏱️ $durationStr",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary,
-                            fontSize = 10.sp,
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(CardElevated)
-                            .padding(horizontal = 5.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = record.getDisplayFormatInfo().substringBefore(" ·"),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextMuted,
-                            fontSize = 9.sp,
-                        )
-                    }
-                }
-            }
-            StatusBadge(status = record.status)
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Title
-        val defaultTitle = if (isMeeting) "会议录音 #${record.id}" else "随身生活记录 #${record.id}"
-        val titleText = record.title?.takeIf { it.isNotBlank() } ?: defaultTitle
-        Text(
-            text = titleText,
-            style = MaterialTheme.typography.titleLarge,
-            color = TextPrimary,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-
-        // Summary box
-        val summaryText = record.summary?.takeIf { it.isNotBlank() }
-            ?: record.transcription?.takeIf { it.isNotBlank() }
-
-        if (!summaryText.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = Formatters.formatTimeOnly(record.createdAt),
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(CardElevated)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(accent),
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .height(72.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.28f)),
+            )
+        }
+
+        TerminalCard(
+            modifier = Modifier.weight(1f),
+            borderColor = accent.copy(alpha = 0.18f),
+            backgroundColor = com.example.shuolesa.theme.CardDark,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+                ) {
+                    ModeBadge(isMeeting = isMeeting, isDigest = isDigest)
+                    if (!isDigest) {
+                        Text(
+                            text = durationStr,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextMuted,
+                        )
+                    }
+                }
+                StatusBadge(status = record.status)
+            }
+
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+
+            Text(
+                text = titleText,
+                style = MaterialTheme.typography.titleLarge,
+                color = TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            if (!summaryText.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(Dimens.gapXs))
                 Text(
                     text = summaryText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
-                    lineHeight = 20.sp,
-                    maxLines = if (expandedTranscription) Int.MAX_VALUE else 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
 
-        // Action Items checklist
-        if (actionItems.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            if (actionItems.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(Dimens.gapSm))
                 Text(
-                    text = "待办事项 (${actionItems.size})",
+                    text = if (pendingCount > 0) "$pendingCount 项待办未完成" else "待办已全部完成",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MintCyan,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                actionItems.take(4).forEach { item ->
-                    Row(
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = if (item.isDone) TextMuted else MintCyan,
-                            modifier = Modifier
-                                .size(15.dp)
-                                .padding(top = 2.dp),
-                        )
-                        Text(
-                            text = item.text,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                textDecoration = if (item.isDone) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-                            ),
-                            color = if (item.isDone) TextMuted else TextPrimary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-
-        // Tags & Expand Section
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Tags list
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
-                val modeColor = if (isMeeting) MintCyan else NeonGreen
-                val modeLabel = if (isMeeting) "会议" else "LifeLog"
-                TagChip(tag = modeLabel, color = modeColor)
-
-                val displayTags = tags.filter { !it.contains("会议") && !it.contains("LifeLog") }
-                if (displayTags.isNotEmpty()) {
-                    displayTags.take(2).forEach { tag ->
-                        TagChip(tag = tag)
-                    }
-                } else {
-                    TagChip(tag = if (isMeeting) "商务工作" else "日常闲聊")
-                }
-            }
-
-            // Quick Play Button & Expand transcription
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (!record.transcription.isNullOrBlank()) {
-                    IconButton(
-                        onClick = { expandedTranscription = !expandedTranscription },
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            imageVector = if (expandedTranscription) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            contentDescription = "展开文字稿",
-                            tint = TextMuted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-
-                IconButton(
-                    onClick = onClick,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MintCyan.copy(alpha = 0.15f)),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "播放录音",
-                        tint = MintCyan,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
-
-        // Expandable Raw Transcription
-        AnimatedVisibility(visible = expandedTranscription && !record.transcription.isNullOrBlank()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp),
-            ) {
-                Text(
-                    text = "逐字识别文本：",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = record.transcription ?: "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    lineHeight = 18.sp,
+                    color = if (pendingCount > 0) accent else TextMuted,
                 )
             }
         }

@@ -61,4 +61,14 @@ class PermissionHelper(private val context: Context) {
     fun hasAllPermissions(): Boolean {
         return REQUIRED_PERMISSIONS.all { hasPermission(it) }
     }
+
+    fun hasMicPermission(): Boolean = hasPermission(Manifest.permission.RECORD_AUDIO)
+
+    fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
+    }
 }

@@ -56,7 +56,7 @@ class AudioCaptureService : Service() {
             private set
 
         @Volatile
-        var currentRecordingModeTitle: String = "🌿 LifeLog 随身省流记"
+        var currentRecordingModeTitle: String = "随身"
             private set
 
         @Volatile
@@ -153,7 +153,7 @@ class AudioCaptureService : Service() {
         val meetingFmt = kotlinx.coroutines.runBlocking { prefs.getMeetingFormatSync() }
 
         currentRecordingMode = mode
-        currentRecordingModeTitle = if (mode == "meeting") "💼 高保真会议录音" else "🌿 LifeLog 随身省流记"
+        currentRecordingModeTitle = if (mode == "meeting") "会议" else "随身"
         currentRecordingFormatDesc = if (mode == "meeting") {
             if (meetingFmt == "wav") "无损 WAV · 16kHz 原始采样" else "高清 AAC · 64kbps"
         } else {

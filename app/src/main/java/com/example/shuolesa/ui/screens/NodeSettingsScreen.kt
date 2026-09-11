@@ -2,6 +2,8 @@ package com.example.shuolesa.ui.screens
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -14,13 +16,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -48,7 +51,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,8 +58,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -74,15 +74,17 @@ import com.example.shuolesa.theme.CardDark
 import com.example.shuolesa.theme.CardElevated
 import com.example.shuolesa.theme.DangerRed
 import com.example.shuolesa.theme.Dimens
-import com.example.shuolesa.theme.MintCyan
-import com.example.shuolesa.theme.MintCyanDim
-import com.example.shuolesa.theme.NeonGreen
+import com.example.shuolesa.theme.Accent
+import com.example.shuolesa.theme.ModeCasual
+import com.example.shuolesa.theme.ModeMeeting
+import com.example.shuolesa.theme.StatusUploaded
 import com.example.shuolesa.theme.SurfaceBorder
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
 import com.example.shuolesa.ui.components.PageHeader
 import com.example.shuolesa.ui.components.SectionLabel
+import com.example.shuolesa.ui.components.SelectableTile
 import com.example.shuolesa.ui.components.SettingsRow
 import com.example.shuolesa.ui.components.TerminalCard
 import com.example.shuolesa.ui.components.TerminalOutlineButton
@@ -100,12 +102,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 现代 AI 引擎与设置配置中心：支持多 Tab 分页（录音 / 盲操 / AI引擎 / 关于），修复等高与换行排版。
+ * 二级设置页：录音与音质 / 盲操与保活 / AI 引擎 / 诊断与关于。
  */
 @Composable
 fun NodeSettingsScreen(
     prefs: AppPreferences,
     permissionHelper: PermissionHelper,
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -135,7 +138,12 @@ fun NodeSettingsScreen(
     var a11yEnabled by remember { mutableStateOf(permissionHelper.isAccessibilityServiceEnabled()) }
     var batteryIgnored by remember { mutableStateOf(permissionHelper.isBatteryOptimizationIgnored()) }
 
-    var selectedSettingsTab by remember { mutableIntStateOf(0) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        a11yEnabled = permissionHelper.isAccessibilityServiceEnabled()
+        batteryIgnored = permissionHelper.isBatteryOptimizationIgnored()
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -152,141 +160,108 @@ fun NodeSettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(BgDark)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
             .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.pagePaddingV),
     ) {
         PageHeader(
-            title = "系统设置",
-            subtitle = "AI 引擎、录音品质分级与无障碍盲操配置",
+            title = "设置",
+            subtitle = "录音、盲操、引擎与诊断",
+            onBack = onBack,
         )
 
         Spacer(modifier = Modifier.height(Dimens.gapMd))
 
-        // Settings Top Segmented Tabs
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Dimens.cardRadius))
-                .background(CardDark)
-                .border(1.dp, SurfaceBorder, RoundedCornerShape(Dimens.cardRadius))
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            val tabs = listOf(
-                Pair(0, "🎙️ 录音"),
-                Pair(1, "⚡ 盲操"),
-                Pair(2, "🧠 AI引擎"),
-                Pair(3, "ℹ️ 关于"),
-            )
-            tabs.forEach { (idx, title) ->
-                val isSel = selectedSettingsTab == idx
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSel) MintCyan.copy(alpha = 0.15f) else Color.Transparent)
-                        .border(1.dp, if (isSel) MintCyan else Color.Transparent, RoundedCornerShape(8.dp))
-                        .clickable { selectedSettingsTab = idx }
-                        .padding(vertical = 9.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isSel) MintCyan else TextMuted,
-                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(Dimens.gapMd))
-
-        // Independent scrollable content container for selected Tab
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .clipToBounds(),
+                .verticalScroll(rememberScrollState()),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = 4.dp),
-            ) {
-            when (selectedSettingsTab) {
-                0 -> RecordingSettingsContent(
-                    launchStrategy = launchStrategy,
-                    recordingMode = recordingMode,
-                    lifelogBitrateKbps = lifelogBitrateKbps,
-                    meetingFormat = meetingFormat,
-                    keepLocalAudio = keepLocalAudio,
-                    autoResumeAfterCall = autoResumeAfterCall,
-                    onSetLaunchStrategy = { scope.launch { prefs.setLaunchStrategy(it) } },
-                    onSetRecordingMode = { scope.launch { prefs.setRecordingMode(it) } },
-                    onSetLifelogBitrateKbps = { scope.launch { prefs.setLifelogBitrateKbps(it) } },
-                    onSetMeetingFormat = { scope.launch { prefs.setMeetingFormat(it) } },
-                    onSetKeepLocalAudio = { scope.launch { prefs.setKeepLocalAudio(it) } },
-                    onSetAutoResumeAfterCall = { scope.launch { prefs.setAutoResumeAfterCall(it) } },
-                )
-                1 -> AccessibilitySettingsContent(
-                    hapticEnabled = hapticEnabled,
-                    lifelogTriggerDuration = lifelogTriggerDuration,
-                    meetingTriggerDuration = meetingTriggerDuration,
-                    a11yEnabled = a11yEnabled,
-                    batteryIgnored = batteryIgnored,
-                    onSetHapticEnabled = { scope.launch { prefs.setHapticEnabled(it) } },
-                    onSetLifelogTriggerDuration = { scope.launch { prefs.setLifelogTriggerDuration(it) } },
-                    onSetMeetingTriggerDuration = { scope.launch { prefs.setMeetingTriggerDuration(it) } },
-                    onOpenAccessibilitySettings = { permissionHelper.openAccessibilitySettings() },
-                    onRequestIgnoreBatteryOptimizations = { permissionHelper.requestIgnoreBatteryOptimizations() },
-                )
-                2 -> AiEngineSettingsContent(
-                    providerMode = providerMode,
-                    baseUrl = baseUrl,
-                    apiKey = apiKey,
-                    asrModel = asrModel,
-                    llmModel = llmModel,
-                    systemPrompt = systemPrompt,
-                    tokenVisible = tokenVisible,
-                    promptExpanded = promptExpanded,
-                    pingStatus = pingStatus,
-                    onToggleTokenVisible = { tokenVisible = !tokenVisible },
-                    onTogglePromptExpanded = { promptExpanded = !promptExpanded },
-                    onApplyPreset = { preset ->
-                        scope.launch {
-                            prefs.applyPreset(preset)
-                            pingStatus = PingState.Idle
-                        }
-                    },
-                    onSetBaseUrl = { scope.launch { prefs.setBaseUrl(it) } },
-                    onSetApiKey = { scope.launch { prefs.setApiKey(it) } },
-                    onSetAsrModel = { scope.launch { prefs.setAsrModel(it) } },
-                    onSetLlmModel = { scope.launch { prefs.setLlmModel(it) } },
-                    onSetSystemPrompt = { scope.launch { prefs.setSystemPrompt(it) } },
-                    onResetPrompt = { scope.launch { prefs.setSystemPrompt(AppPreferences.DEFAULT_SYSTEM_PROMPT) } },
-                    onPing = {
-                        pingStatus = PingState.Loading
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                ApiService().testConnection(baseUrl, apiKey, llmModel)
-                            }
-                            pingStatus = if (result.isSuccess) {
-                                PingState.Success
-                            } else {
-                                PingState.Error(result.exceptionOrNull()?.message ?: "未知错误")
-                            }
-                        }
-                    },
-                )
-                3 -> AboutSettingsContent(
-                    permissionHelper = permissionHelper,
-                )
-            }
+            RecordingSettingsContent(
+                launchStrategy = launchStrategy,
+                recordingMode = recordingMode,
+                lifelogBitrateKbps = lifelogBitrateKbps,
+                meetingFormat = meetingFormat,
+                keepLocalAudio = keepLocalAudio,
+                autoResumeAfterCall = autoResumeAfterCall,
+                onSetLaunchStrategy = { scope.launch { prefs.setLaunchStrategy(it) } },
+                onSetRecordingMode = { scope.launch { prefs.setRecordingMode(it) } },
+                onSetLifelogBitrateKbps = { scope.launch { prefs.setLifelogBitrateKbps(it) } },
+                onSetMeetingFormat = { scope.launch { prefs.setMeetingFormat(it) } },
+                onSetKeepLocalAudio = { scope.launch { prefs.setKeepLocalAudio(it) } },
+                onSetAutoResumeAfterCall = { scope.launch { prefs.setAutoResumeAfterCall(it) } },
+            )
 
-            Spacer(modifier = Modifier.height(Dimens.pageBottomNavClearance))
+            Spacer(modifier = Modifier.height(Dimens.gapXl))
+
+            AccessibilitySettingsContent(
+                hapticEnabled = hapticEnabled,
+                lifelogTriggerDuration = lifelogTriggerDuration,
+                meetingTriggerDuration = meetingTriggerDuration,
+                a11yEnabled = a11yEnabled,
+                batteryIgnored = batteryIgnored,
+                onSetHapticEnabled = { scope.launch { prefs.setHapticEnabled(it) } },
+                onSetLifelogTriggerDuration = { scope.launch { prefs.setLifelogTriggerDuration(it) } },
+                onSetMeetingTriggerDuration = { scope.launch { prefs.setMeetingTriggerDuration(it) } },
+                onOpenAccessibilitySettings = { permissionHelper.openAccessibilitySettings() },
+                onRequestIgnoreBatteryOptimizations = { permissionHelper.requestIgnoreBatteryOptimizations() },
+            )
+
+            Spacer(modifier = Modifier.height(Dimens.gapXl))
+
+            AiEngineSettingsContent(
+                providerMode = providerMode,
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                asrModel = asrModel,
+                llmModel = llmModel,
+                systemPrompt = systemPrompt,
+                tokenVisible = tokenVisible,
+                promptExpanded = promptExpanded,
+                pingStatus = pingStatus,
+                onToggleTokenVisible = { tokenVisible = !tokenVisible },
+                onTogglePromptExpanded = { promptExpanded = !promptExpanded },
+                onApplyPreset = { preset ->
+                    scope.launch {
+                        prefs.applyPreset(preset)
+                        pingStatus = PingState.Idle
+                    }
+                },
+                onSetBaseUrl = { scope.launch { prefs.setBaseUrl(it) } },
+                onSetApiKey = { scope.launch { prefs.setApiKey(it) } },
+                onSetAsrModel = { scope.launch { prefs.setAsrModel(it) } },
+                onSetLlmModel = { scope.launch { prefs.setLlmModel(it) } },
+                onSetSystemPrompt = { scope.launch { prefs.setSystemPrompt(it) } },
+                onResetPrompt = { scope.launch { prefs.setSystemPrompt(AppPreferences.DEFAULT_SYSTEM_PROMPT) } },
+                onPing = {
+                    pingStatus = PingState.Loading
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            ApiService().testConnection(baseUrl, apiKey, llmModel)
+                        }
+                        pingStatus = if (result.isSuccess) {
+                            PingState.Success
+                        } else {
+                            PingState.Error(result.exceptionOrNull()?.message ?: "未知错误")
+                        }
+                    }
+                },
+            )
+
+            Spacer(modifier = Modifier.height(Dimens.gapXl))
+
+            AboutSettingsContent(
+                permissionHelper = permissionHelper,
+                onRequestRuntimePermissions = {
+                    permissionLauncher.launch(PermissionHelper.REQUIRED_PERMISSIONS)
+                },
+                onOpenAppSettings = { permissionHelper.openAppSettings() },
+            )
+
+            Spacer(modifier = Modifier.height(Dimens.gapXl))
         }
     }
-}
 }
 
 // -----------------------------------------------------------------------------
@@ -322,74 +297,30 @@ private fun RecordingSettingsContent(
             style = MaterialTheme.typography.bodySmall,
             color = TextMuted,
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
 
-        // Strategy Selector (Equal Height)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
         ) {
-            val isDefault = launchStrategy == "default"
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .defaultMinSize(minHeight = 64.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (isDefault) MintCyan.copy(alpha = 0.15f) else CardElevated)
-                    .border(1.dp, if (isDefault) MintCyan else SurfaceBorder, RoundedCornerShape(8.dp))
-                    .clickable { onSetLaunchStrategy("default") }
-                    .padding(vertical = 12.dp, horizontal = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "⚡ 固定默认模式",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDefault) MintCyan else TextPrimary,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "点击直接开启固定模式",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isDefault) MintCyan.copy(alpha = 0.8f) else TextMuted,
-                        fontSize = 10.sp,
-                    )
-                }
-            }
-
-            val isPrompt = launchStrategy == "prompt"
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .defaultMinSize(minHeight = 64.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (isPrompt) NeonGreen.copy(alpha = 0.15f) else CardElevated)
-                    .border(1.dp, if (isPrompt) NeonGreen else SurfaceBorder, RoundedCornerShape(8.dp))
-                    .clickable { onSetLaunchStrategy("prompt") }
-                    .padding(vertical = 12.dp, horizontal = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "🎯 每次单独选择",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isPrompt) NeonGreen else TextPrimary,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "点击弹窗自选格式",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isPrompt) NeonGreen.copy(alpha = 0.8f) else TextMuted,
-                        fontSize = 10.sp,
-                    )
-                }
-            }
+            SelectableTile(
+                title = "固定默认",
+                subtitle = "点击直接开启固定模式",
+                selected = launchStrategy == "default",
+                onClick = { onSetLaunchStrategy("default") },
+                accent = Accent,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+            SelectableTile(
+                title = "每次选择",
+                subtitle = "点击弹窗自选格式",
+                selected = launchStrategy == "prompt",
+                onClick = { onSetLaunchStrategy("prompt") },
+                accent = ModeMeeting,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -402,78 +333,34 @@ private fun RecordingSettingsContent(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "随身闲聊建议使用 LifeLog 极小文件，正式会议建议使用高保真",
+                text = "日常用随身省流，正式场合用会议高保真",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
 
-            // Default Mode Selector (Equal Height)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
             ) {
-                val isLifeLog = recordingMode == "lifelog"
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .defaultMinSize(minHeight = 60.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isLifeLog) NeonGreen.copy(alpha = 0.15f) else CardElevated)
-                        .border(1.dp, if (isLifeLog) NeonGreen else SurfaceBorder, RoundedCornerShape(8.dp))
-                        .clickable { onSetRecordingMode("lifelog") }
-                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "🌿 LifeLog 模式",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isLifeLog) NeonGreen else TextPrimary,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "小文件 · 超省电省空间",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isLifeLog) NeonGreen.copy(alpha = 0.8f) else TextMuted,
-                            fontSize = 10.sp,
-                        )
-                    }
-                }
-
-                val isMeeting = recordingMode == "meeting"
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .defaultMinSize(minHeight = 60.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isMeeting) MintCyan.copy(alpha = 0.15f) else CardElevated)
-                        .border(1.dp, if (isMeeting) MintCyan else SurfaceBorder, RoundedCornerShape(8.dp))
-                        .clickable { onSetRecordingMode("meeting") }
-                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "💼 会议模式",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isMeeting) MintCyan else TextPrimary,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "大文件 · 清晰高保真",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isMeeting) MintCyan.copy(alpha = 0.8f) else TextMuted,
-                            fontSize = 10.sp,
-                        )
-                    }
-                }
+                SelectableTile(
+                    title = "随身",
+                    subtitle = "小文件 · 省电省空间",
+                    selected = recordingMode == "lifelog",
+                    onClick = { onSetRecordingMode("lifelog") },
+                    accent = ModeCasual,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+                SelectableTile(
+                    title = "会议",
+                    subtitle = "大文件 · 清晰高保真",
+                    selected = recordingMode == "meeting",
+                    onClick = { onSetRecordingMode("meeting") },
+                    accent = ModeMeeting,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -516,8 +403,8 @@ private fun RecordingSettingsContent(
             checked = keepLocalAudio,
             onCheckedChange = onSetKeepLocalAudio,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = MintCyan,
-                checkedTrackColor = MintCyanDim.copy(alpha = 0.3f),
+                checkedThumbColor = Accent,
+                checkedTrackColor = Accent.copy(alpha = 0.3f),
                 uncheckedThumbColor = TextMuted,
                 uncheckedTrackColor = CardElevated,
             ),
@@ -535,8 +422,8 @@ private fun RecordingSettingsContent(
             checked = autoResumeAfterCall,
             onCheckedChange = onSetAutoResumeAfterCall,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = MintCyan,
-                checkedTrackColor = MintCyanDim.copy(alpha = 0.3f),
+                checkedThumbColor = Accent,
+                checkedTrackColor = Accent.copy(alpha = 0.3f),
                 uncheckedThumbColor = TextMuted,
                 uncheckedTrackColor = CardElevated,
             ),
@@ -550,54 +437,31 @@ private fun LifeLogBitrateSection(
     onSetLifelogBitrateKbps: (Int) -> Unit,
 ) {
     Text(
-        text = "🌿 LifeLog 压缩码率 (AAC 硬件编码)",
+        text = "随身压缩码率 (AAC)",
         style = MaterialTheme.typography.bodySmall,
-        color = NeonGreen,
+        color = Accent,
         fontWeight = FontWeight.SemiBold,
     )
-    Spacer(modifier = Modifier.height(6.dp))
+    Spacer(modifier = Modifier.height(Dimens.gapXs))
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
     ) {
         listOf(
             Triple(16, "16k 极省", "约 7MB/h"),
             Triple(24, "24k 标准", "约 10MB/h"),
             Triple(32, "32k 清晰", "约 14MB/h"),
         ).forEach { (kbps, label, est) ->
-            val isSel = lifelogBitrateKbps == kbps
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .defaultMinSize(minHeight = 52.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (isSel) NeonGreen.copy(alpha = 0.15f) else CardElevated)
-                    .border(1.dp, if (isSel) NeonGreen else SurfaceBorder, RoundedCornerShape(6.dp))
-                    .clickable { onSetLifelogBitrateKbps(kbps) }
-                    .padding(vertical = 8.dp, horizontal = 2.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSel) NeonGreen else TextPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = est,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSel) NeonGreen.copy(alpha = 0.85f) else TextMuted,
-                        fontSize = 9.sp,
-                        maxLines = 1,
-                    )
-                }
-            }
+            SelectableTile(
+                title = label,
+                subtitle = est,
+                selected = lifelogBitrateKbps == kbps,
+                onClick = { onSetLifelogBitrateKbps(kbps) },
+                accent = ModeCasual,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
         }
     }
 }
@@ -608,53 +472,30 @@ private fun MeetingFormatSection(
     onSetMeetingFormat: (String) -> Unit,
 ) {
     Text(
-        text = "💼 会议录音格式与品质",
+        text = "会议录音格式",
         style = MaterialTheme.typography.bodySmall,
-        color = MintCyan,
+        color = ModeMeeting,
         fontWeight = FontWeight.SemiBold,
     )
-    Spacer(modifier = Modifier.height(6.dp))
+    Spacer(modifier = Modifier.height(Dimens.gapXs))
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
     ) {
         listOf(
             Triple("wav", "无损 WAV", "16kHz · 115MB/h"),
             Triple("aac_64k", "高清 AAC", "64kbps · 28MB/h"),
         ).forEach { (fmt, label, est) ->
-            val isSel = meetingFormat == fmt
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .defaultMinSize(minHeight = 52.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (isSel) MintCyan.copy(alpha = 0.15f) else CardElevated)
-                    .border(1.dp, if (isSel) MintCyan else SurfaceBorder, RoundedCornerShape(6.dp))
-                    .clickable { onSetMeetingFormat(fmt) }
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSel) MintCyan else TextPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = est,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSel) MintCyan.copy(alpha = 0.85f) else TextMuted,
-                        fontSize = 9.sp,
-                        maxLines = 1,
-                    )
-                }
-            }
+            SelectableTile(
+                title = label,
+                subtitle = est,
+                selected = meetingFormat == fmt,
+                onClick = { onSetMeetingFormat(fmt) },
+                accent = ModeMeeting,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
         }
     }
 }
@@ -687,8 +528,8 @@ private fun AccessibilitySettingsContent(
             checked = hapticEnabled,
             onCheckedChange = onSetHapticEnabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = MintCyan,
-                checkedTrackColor = MintCyanDim.copy(alpha = 0.3f),
+                checkedThumbColor = Accent,
+                checkedTrackColor = Accent.copy(alpha = 0.3f),
                 uncheckedThumbColor = TextMuted,
                 uncheckedTrackColor = CardElevated,
             ),
@@ -709,7 +550,7 @@ private fun AccessibilitySettingsContent(
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = "息屏或后台下，同时按住音量 +/- 键不同时长触发不同音质",
+            text = "息屏或后台下，同时按住音量 + 和 - 不同时长，触发随身或会议录音",
             style = MaterialTheme.typography.bodySmall,
             color = TextMuted,
         )
@@ -721,8 +562,8 @@ private fun AccessibilitySettingsContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
-                .background(MintCyan.copy(alpha = 0.08f))
-                .border(1.dp, MintCyan.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                .background(Accent.copy(alpha = 0.08f))
+                .border(1.dp, Accent.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                 .padding(10.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -730,25 +571,22 @@ private fun AccessibilitySettingsContent(
                     text = "🪜 振动阶梯手感说明：",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MintCyan,
+                    color = Accent,
                 )
                 Text(
-                    text = "1. 按住达 ${tempLifelogDuration.toInt()} 秒：震动脉冲 1 次；松手即开启 LifeLog 格式录制。",
+                    text = "1. 同时按住达 ${tempLifelogDuration.toInt()} 秒：震动脉冲 1 次；松手即开启随身录制。",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
-                    fontSize = 11.sp,
                 )
                 Text(
                     text = "2. 持续按住达 ${tempMeetingDuration.toInt()} 秒：连震 2 次，自动开启高保真会议录制。",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
-                    fontSize = 11.sp,
                 )
                 Text(
-                    text = "3. 录音中再次长按 (~1.2 秒)：震动停止录制。",
+                    text = "3. 录音中再次同时按住约 1.2 秒：震动停止录制。",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted,
-                    fontSize = 11.sp,
                 )
             }
         }
@@ -763,9 +601,9 @@ private fun AccessibilitySettingsContent(
         ) {
             Column {
                 Text(
-                    text = "阶梯 1 · LifeLog 随身模式",
+                    text = "阶梯 1 · 随身",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = NeonGreen,
+                    color = ModeCasual,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
@@ -777,7 +615,7 @@ private fun AccessibilitySettingsContent(
             Text(
                 text = "${tempLifelogDuration.toInt()} 秒",
                 style = MaterialTheme.typography.titleMedium,
-                color = NeonGreen,
+                color = ModeCasual,
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -800,8 +638,8 @@ private fun AccessibilitySettingsContent(
             valueRange = 1f..4f,
             steps = 2,
             colors = SliderDefaults.colors(
-                thumbColor = NeonGreen,
-                activeTrackColor = NeonGreen,
+                thumbColor = ModeCasual,
+                activeTrackColor = ModeCasual,
                 inactiveTrackColor = CardElevated,
                 activeTickColor = BgDark,
                 inactiveTickColor = TextMuted,
@@ -818,9 +656,9 @@ private fun AccessibilitySettingsContent(
         ) {
             Column {
                 Text(
-                    text = "阶梯 2 · 会议高保真模式",
+                    text = "阶梯 2 · 会议",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MintCyan,
+                    color = ModeMeeting,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
@@ -832,7 +670,7 @@ private fun AccessibilitySettingsContent(
             Text(
                 text = "${tempMeetingDuration.toInt()} 秒",
                 style = MaterialTheme.typography.titleMedium,
-                color = MintCyan,
+                color = ModeMeeting,
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -849,8 +687,8 @@ private fun AccessibilitySettingsContent(
             valueRange = 3f..7f,
             steps = 3,
             colors = SliderDefaults.colors(
-                thumbColor = MintCyan,
-                activeTrackColor = MintCyan,
+                thumbColor = ModeMeeting,
+                activeTrackColor = ModeMeeting,
                 inactiveTrackColor = CardElevated,
                 activeTickColor = BgDark,
                 inactiveTickColor = TextMuted,
@@ -862,31 +700,31 @@ private fun AccessibilitySettingsContent(
 
     // Accessibility Service Status Card
     TerminalCard(
-        borderColor = if (a11yEnabled) MintCyan.copy(alpha = 0.35f) else DangerRed.copy(alpha = 0.35f),
+        borderColor = if (a11yEnabled) Accent.copy(alpha = 0.35f) else DangerRed.copy(alpha = 0.35f),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(Dimens.statusDot)
                     .clip(CircleShape)
-                    .background(if (a11yEnabled) MintCyan else DangerRed),
+                    .background(if (a11yEnabled) Accent else DangerRed),
             )
             Text(
                 text = if (a11yEnabled) "无障碍按键监听服务已开启" else "无障碍服务未启用",
                 style = MaterialTheme.typography.titleMedium,
-                color = if (a11yEnabled) MintCyan else DangerRed,
+                color = if (a11yEnabled) Accent else DangerRed,
                 modifier = Modifier.padding(start = Dimens.gapSm),
             )
         }
         if (!a11yEnabled) {
             Spacer(modifier = Modifier.height(Dimens.gapSm))
             Text(
-                text = "开启“说了啥”无障碍服务后，即可在息屏时长按音量键盲操录音",
+                text = "开启“说了啥”无障碍服务后，即可在息屏时同时按住音量 + 和 - 盲操录音",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted,
             )
             TextButton(onClick = onOpenAccessibilitySettings) {
-                Text("前往系统设置开启", style = MaterialTheme.typography.labelLarge, color = MintCyan)
+                Text("前往系统设置开启", style = MaterialTheme.typography.labelLarge, color = Accent)
             }
         }
     }
@@ -906,7 +744,7 @@ private fun AccessibilitySettingsContent(
                 color = TextMuted,
             )
             TextButton(onClick = onRequestIgnoreBatteryOptimizations) {
-                Text("开启无限制白名单", style = MaterialTheme.typography.labelLarge, color = MintCyan)
+                Text("开启无限制白名单", style = MaterialTheme.typography.labelLarge, color = Accent)
             }
         }
     }
@@ -949,8 +787,8 @@ private fun AiEngineSettingsContent(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(Dimens.fieldRadius))
-                    .background(if (isSelected) MintCyan.copy(alpha = 0.12f) else CardDark)
-                    .border(1.dp, if (isSelected) MintCyan else SurfaceBorder, RoundedCornerShape(Dimens.fieldRadius))
+                    .background(if (isSelected) Accent.copy(alpha = 0.12f) else CardDark)
+                    .border(1.dp, if (isSelected) Accent else SurfaceBorder, RoundedCornerShape(Dimens.fieldRadius))
                     .clickable { onApplyPreset(preset) }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
@@ -959,7 +797,7 @@ private fun AiEngineSettingsContent(
                     text = preset.displayName.split(" ")[0],
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSelected) MintCyan else TextSecondary,
+                    color = if (isSelected) Accent else TextSecondary,
                 )
             }
         }
@@ -1064,7 +902,7 @@ private fun AiEngineSettingsContent(
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = "恢复默认",
-                    tint = MintCyan,
+                    tint = Accent,
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -1087,9 +925,9 @@ private fun AiEngineSettingsContent(
     // Ping Connection Button
     val pingColor by animateColorAsState(
         targetValue = when (pingStatus) {
-            is PingState.Success -> MintCyan
+            is PingState.Success -> Accent
             is PingState.Error -> DangerRed
-            else -> MintCyan
+            else -> Accent
         },
         animationSpec = tween(300),
         label = "pingColor",
@@ -1127,6 +965,8 @@ private fun AiEngineSettingsContent(
 @Composable
 private fun AboutSettingsContent(
     permissionHelper: PermissionHelper,
+    onRequestRuntimePermissions: () -> Unit = {},
+    onOpenAppSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1159,20 +999,20 @@ private fun AboutSettingsContent(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
-                    .background(MintCyan.copy(alpha = 0.15f))
+                    .background(Accent.copy(alpha = 0.15f))
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v2.1.5",
+                    text = "v3.0.1",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MintCyan,
+                    color = Accent,
                     fontWeight = FontWeight.Bold,
                 )
             }
         }
         Spacer(modifier = Modifier.height(Dimens.gapSm))
         Text(
-            text = "✨ 核心特性：\n• 🛠️ 运行诊断与日志一键导出 / 分享（快速排查排队与网络状况）\n• 🌿 LifeLog 极小文件 / 💼 会议高保真音频分级\n• 4 栏全功能工作台（记忆流 · 生活手记 · 待办 · 设置）\n• 方便快捷的设置 Tab 分页分类交互\n• 无障碍双阶触觉长按盲操（单脉冲/双脉冲自选手感）\n• 录制启动策略自由切换（固定默认 / 每次单独选择）\n• 全局交互式待办勾选闭环与 Markdown 一键导出",
+            text = "核心能力：\n• 记录 / 今日 / 待办 三栏工作台，录音键常驻底栏\n• 随身省流与会议高保真两档音质\n• 无障碍双阶音量键盲操\n• AI 转写提炼、待办闭环、Markdown 导出\n• 运行诊断与日志一键导出 / 分享",
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
             lineHeight = 20.sp,
@@ -1181,7 +1021,7 @@ private fun AboutSettingsContent(
 
     Spacer(modifier = Modifier.height(Dimens.gapMd))
 
-    SectionLabel("🛠️ 运行诊断与日志导出")
+    SectionLabel("运行诊断与日志导出")
     Spacer(modifier = Modifier.height(Dimens.gapSm))
 
     TerminalCard {
@@ -1207,7 +1047,7 @@ private fun AboutSettingsContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             TerminalOutlineButton(
-                text = if (isExporting) "正在提取..." else "📋 一键复制日志",
+                text = if (isExporting) "正在提取..." else "复制诊断",
                 onClick = {
                     if (!isExporting) {
                         isExporting = true
@@ -1226,7 +1066,7 @@ private fun AboutSettingsContent(
             )
 
             TerminalOutlineButton(
-                text = "📤 导出并分享",
+                text = "导出并分享",
                 onClick = {
                     scope.launch {
                         try {
@@ -1244,7 +1084,7 @@ private fun AboutSettingsContent(
 
         // Immediate retry button
         TerminalOutlineButton(
-            text = if (isRetrying) "正在重试队列中..." else "🔄 立即重试所有排队/失败录音",
+            text = if (isRetrying) "正在重试队列中..." else "立即重试排队/失败录音",
             onClick = {
                 if (!isRetrying) {
                     isRetrying = true
@@ -1283,10 +1123,30 @@ private fun AboutSettingsContent(
         val hasBattery = permissionHelper.isBatteryOptimizationIgnored()
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            PermissionStatusRow(name = "麦克风录音权限", isGranted = hasMic)
-            PermissionStatusRow(name = "无障碍盲操监听服务", isGranted = hasA11y)
-            PermissionStatusRow(name = "后台无限制电池优化", isGranted = hasBattery)
-            PermissionStatusRow(name = "前台通知与磁贴权限", isGranted = hasNotif)
+            PermissionStatusRow(
+                name = "麦克风录音权限",
+                isGranted = hasMic,
+                onClick = onRequestRuntimePermissions,
+            )
+            PermissionStatusRow(
+                name = "无障碍盲操监听服务",
+                isGranted = hasA11y,
+                onClick = { permissionHelper.openAccessibilitySettings() },
+            )
+            PermissionStatusRow(
+                name = "后台无限制电池优化",
+                isGranted = hasBattery,
+                onClick = { permissionHelper.requestIgnoreBatteryOptimizations() },
+            )
+            PermissionStatusRow(
+                name = "前台通知与磁贴权限",
+                isGranted = hasNotif,
+                onClick = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    onRequestRuntimePermissions
+                } else {
+                    onOpenAppSettings
+                },
+            )
         }
     }
 
@@ -1297,11 +1157,11 @@ private fun AboutSettingsContent(
 
     TerminalCard {
         Text(
-            text = "💡 操作技巧：\n" +
-                "• 盲操录音：熄屏或锁屏下，同时长按音量 +/- 键。震动 1 次松手录 LifeLog 闲聊，持续按住连震 2 次自动开高保真会议；\n" +
-                "• 停止录音：录音过程中再次长按音量双键约 1.2 秒，震动即停止；\n" +
-                "• 桌面快捷方式：长按桌面“说了啥”图标可快速启动录音；\n" +
-                "• 快速导出：在“生活手记”或录音详情页顶部点击复制，直接获取排版完备的 Markdown 笔记。",
+            text = "操作技巧：\n" +
+                "• 盲操：熄屏时同时按住音量 + 和 - 。震动 1 次松手=随身，连震 2 次=会议；\n" +
+                "• 停止：录音中再长按约 1.2 秒；\n" +
+                "• 桌面快捷方式：长按应用图标可直接开始录音；\n" +
+                "• 导出：在今日复盘或纪要页顶部复制 Markdown。",
             style = MaterialTheme.typography.bodySmall,
             color = TextMuted,
             lineHeight = 18.sp,
@@ -1310,9 +1170,16 @@ private fun AboutSettingsContent(
 }
 
 @Composable
-private fun PermissionStatusRow(name: String, isGranted: Boolean) {
+private fun PermissionStatusRow(
+    name: String,
+    isGranted: Boolean,
+    onClick: () -> Unit = {},
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1321,14 +1188,14 @@ private fun PermissionStatusRow(name: String, isGranted: Boolean) {
             Icon(
                 imageVector = if (isGranted) Icons.Default.Check else Icons.Default.Close,
                 contentDescription = null,
-                tint = if (isGranted) NeonGreen else DangerRed,
+                tint = if (isGranted) StatusUploaded else DangerRed,
                 modifier = Modifier.size(16.dp),
             )
             Spacer(modifier = Modifier.size(4.dp))
             Text(
                 text = if (isGranted) "正常" else "待授权",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isGranted) NeonGreen else DangerRed,
+                color = if (isGranted) StatusUploaded else DangerRed,
                 fontWeight = FontWeight.SemiBold,
             )
         }

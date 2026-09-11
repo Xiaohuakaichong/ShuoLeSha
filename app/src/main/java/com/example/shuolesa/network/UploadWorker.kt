@@ -189,7 +189,7 @@ class UploadWorker(
                 val actionItemsJson = notes?.actionItems?.let { ActionItemModel.toJsonString(it) }
 
                 val tagsList = notes?.tags?.toMutableList() ?: mutableListOf()
-                val modeTag = if (isMeeting) "会议" else "LifeLog"
+                val modeTag = if (isMeeting) "会议" else "随身"
                 if (!tagsList.contains(modeTag)) {
                     tagsList.add(0, modeTag)
                 }

@@ -4,11 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,21 +16,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material.icons.filled.WorkOutline
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.FormatQuote
+import androidx.compose.material.icons.outlined.Timeline
+import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,32 +44,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.model.ActionItemModel
 import com.example.shuolesa.data.model.LifeLogResult
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
 import com.example.shuolesa.network.ApiService
+import com.example.shuolesa.theme.AccentOn
 import com.example.shuolesa.theme.BgDark
-import com.example.shuolesa.theme.CardDark
 import com.example.shuolesa.theme.CardElevated
 import com.example.shuolesa.theme.Dimens
-import com.example.shuolesa.theme.ElectricBlue
-import com.example.shuolesa.theme.MintCyan
-import com.example.shuolesa.theme.NeonGreen
-import com.example.shuolesa.theme.PureBlack
+import com.example.shuolesa.theme.ModeCasual
+import com.example.shuolesa.theme.ModeDigest
+import com.example.shuolesa.theme.ModeMeeting
 import com.example.shuolesa.theme.SurfaceBorder
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
+import com.example.shuolesa.ui.components.FilterChip
 import com.example.shuolesa.ui.components.PageHeader
+import com.example.shuolesa.ui.components.SectionLabel
+import com.example.shuolesa.ui.components.TerminalCard
+import com.example.shuolesa.ui.components.TimelineItem
 import com.example.shuolesa.util.Formatters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -84,21 +80,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 独立一级主屏：LifeLog 每日生活手记与全天复盘
+ * 今日复盘：按日汇总录音，生成全天手记。
  */
 @Composable
 fun LifeLogScreen(
     repository: AudioRepository,
     prefs: AppPreferences,
+    onOpenSettings: () -> Unit = {},
+    onRecordClick: (AudioRecordEntity) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var selectedDateMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val dateStr = remember(selectedDateMs) { Formatters.formatDateOnly(selectedDateMs) }
-    val isToday = remember(selectedDateMs) {
-        Formatters.formatDateOnly(selectedDateMs) == Formatters.formatDateOnly(System.currentTimeMillis())
-    }
 
     var dayRecords by remember { mutableStateOf<List<AudioRecordEntity>>(emptyList()) }
     var existingLifeLog by remember { mutableStateOf<AudioRecordEntity?>(null) }
@@ -110,7 +105,7 @@ fun LifeLogScreen(
             val startOfDay = Formatters.getStartOfDay(selectedDateMs)
             val endOfDay = Formatters.getEndOfDay(selectedDateMs)
             val records = repository.getRecordsBetween(startOfDay, endOfDay)
-                .filter { it.sessionId != "lifelog_$dateStr" && !it.tags.orEmpty().contains("LifeLog") }
+                .filter { !it.isDailyLifeLogSummary() }
             val lifeLogRecord = repository.getRecordBySessionId("lifelog_$dateStr")
 
             withContext(Dispatchers.Main) {
@@ -167,13 +162,13 @@ fun LifeLogScreen(
                     val result = res.getOrThrow()
                     val markdown = result.toMarkdown(dateStr)
                     val totalDuration = dayRecords.sumOf { it.durationMs }
-
                     val endOfDay = Formatters.getEndOfDay(selectedDateMs)
+                    val cleanTitle = result.title.removePrefix("🌿 ").trim()
 
                     if (existingLifeLog != null) {
                         repository.markProcessedStructured(
                             id = existingLifeLog!!.id,
-                            title = "🌿 " + result.title.removePrefix("🌿 ").trim(),
+                            title = cleanTitle,
                             summary = result.summary,
                             actionItems = ActionItemModel.toJsonString(result.unifiedActionItems),
                             tags = "[\"LifeLog\", \"每日复盘\"]",
@@ -189,7 +184,7 @@ fun LifeLogScreen(
                             fileSizeBytes = 0L,
                             createdAt = endOfDay.coerceAtMost(System.currentTimeMillis()),
                             status = AudioRecordEntity.STATUS_UPLOADED,
-                            title = "🌿 " + result.title.removePrefix("🌿 ").trim(),
+                            title = cleanTitle,
                             summary = result.summary,
                             actionItems = ActionItemModel.toJsonString(result.unifiedActionItems),
                             tags = "[\"LifeLog\", \"每日复盘\"]",
@@ -202,7 +197,7 @@ fun LifeLogScreen(
                     withContext(Dispatchers.Main) {
                         parsedResult = result
                         reloadDayData()
-                        Toast.makeText(context, "🌿 $dateStr LifeLog 已生成！", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "$dateStr 复盘已生成", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
@@ -220,555 +215,115 @@ fun LifeLogScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(BgDark)
             .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.pagePaddingV)
             .verticalScroll(rememberScrollState()),
     ) {
         PageHeader(
-            title = "生活手记",
-            subtitle = "全天生活复盘 · 闲聊温情与决议",
+            title = "今日",
+            subtitle = "全天复盘",
+            onSettings = onOpenSettings,
             trailing = {
                 if (parsedResult != null) {
                     IconButton(
                         onClick = {
                             val md = parsedResult!!.toMarkdown(dateStr)
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("LifeLog", md))
-                            Toast.makeText(context, "已复制 LifeLog Markdown", Toast.LENGTH_SHORT).show()
+                            clipboard.setPrimaryClip(ClipData.newPlainText("今日复盘", md))
+                            Toast.makeText(context, "已复制 Markdown", Toast.LENGTH_SHORT).show()
                         },
                     ) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "复制 Markdown",
-                            tint = MintCyan,
+                            tint = ModeDigest,
                         )
                     }
                 }
             },
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
 
-        // Date selection bar
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val yesterdayMs = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
-            val dayBeforeMs = System.currentTimeMillis() - 48 * 60 * 60 * 1000L
-
             val dates = listOf(
                 "今天" to System.currentTimeMillis(),
-                "昨天" to yesterdayMs,
-                "前天" to dayBeforeMs,
+                "昨天" to System.currentTimeMillis() - 24 * 60 * 60 * 1000L,
+                "前天" to System.currentTimeMillis() - 48 * 60 * 60 * 1000L,
             )
-
             dates.forEach { (label, timeMs) ->
                 val isSelected = Formatters.formatDateOnly(selectedDateMs) == Formatters.formatDateOnly(timeMs)
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSelected) MintCyan.copy(alpha = 0.2f) else CardDark)
-                        .border(1.dp, if (isSelected) MintCyan else SurfaceBorder, RoundedCornerShape(8.dp))
-                        .clickable { selectedDateMs = timeMs }
-                        .padding(horizontal = 14.dp, vertical = 7.dp),
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isSelected) MintCyan else TextSecondary,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MintCyan.copy(alpha = 0.12f))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = dateStr,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MintCyan,
-                    fontWeight = FontWeight.SemiBold,
+                FilterChip(
+                    label = label,
+                    selected = isSelected,
+                    onClick = { if (!isGenerating) selectedDateMs = timeMs },
+                    accent = ModeDigest,
                 )
             }
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = dateStr,
+                style = MaterialTheme.typography.labelSmall,
+                color = ModeDigest,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(Dimens.gapMd))
 
-        // Day status summary banner
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(CardDark)
-                .border(1.dp, if (parsedResult != null) NeonGreen.copy(alpha = 0.35f) else SurfaceBorder, RoundedCornerShape(12.dp))
-                .padding(14.dp),
-        ) {
+        TerminalCard(borderColor = if (parsedResult != null) ModeDigest.copy(alpha = 0.35f) else SurfaceBorder) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(if (parsedResult != null) NeonGreen.copy(alpha = 0.15f) else MintCyan.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = if (parsedResult != null) NeonGreen else MintCyan,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = if (parsedResult != null) "✨ 今日手记已生成" else "🎙️ 已记录 ${dayRecords.size} 段声音",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = if (dayRecords.isEmpty()) "该日期暂未记录音频片段" else "总计时长：${Formatters.formatDuration(dayRecords.sumOf { it.durationMs })}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextMuted,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-
-                if (dayRecords.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isGenerating) CardElevated else NeonGreen)
-                            .clickable(enabled = !isGenerating, onClick = triggerGenerateLifeLog)
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            if (isGenerating) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(12.dp),
-                                    color = MintCyan,
-                                    strokeWidth = 2.dp,
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = if (parsedResult != null) Icons.Default.Refresh else Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = PureBlack,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
-                            Text(
-                                text = if (isGenerating) "提炼中..." else if (parsedResult != null) "重新复盘" else "生成手记",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isGenerating) TextSecondary else PureBlack,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (parsedResult != null) {
-            val result = parsedResult!!
-
-            // Title & Daily Quote Card
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(NeonGreen.copy(alpha = 0.12f), CardDark)
-                        )
-                    )
-                    .border(1.dp, NeonGreen.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                    .padding(16.dp),
-            ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = result.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (!result.dailyQuote.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.Top,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FormatQuote,
-                                contentDescription = null,
-                                tint = NeonGreen,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Text(
-                                text = result.dailyQuote,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = NeonGreen,
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Summary narrative
-            if (result.summary.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(CardDark)
-                        .border(1.dp, SurfaceBorder, RoundedCornerShape(12.dp))
-                        .padding(14.dp),
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = MintCyan,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = "心境与生活综述",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MintCyan,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = result.summary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextPrimary,
-                            lineHeight = 20.sp,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-
-            // Casual Chats & Social Highlights Card
-            if (!result.socialAndChats.isNullOrBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(CardDark)
-                        .border(1.dp, ElectricBlue.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                        .padding(14.dp),
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ChatBubbleOutline,
-                                contentDescription = null,
-                                tint = ElectricBlue,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = "👥 闲聊与社交亮点 · 人情温度",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = ElectricBlue,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = result.socialAndChats,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextPrimary,
-                            lineHeight = 20.sp,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-
-            // Work Decisions & Resolutions Card
-            if (!result.workAndDecisions.isNullOrBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(CardDark)
-                        .border(1.dp, MintCyan.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                        .padding(14.dp),
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.WorkOutline,
-                                contentDescription = null,
-                                tint = MintCyan,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = "💼 工作决策与会议决议",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MintCyan,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = result.workAndDecisions,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextPrimary,
-                            lineHeight = 20.sp,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-
-            // Timeline Highlights
-            if (result.timelineHighlights.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(CardDark)
-                        .border(1.dp, SurfaceBorder, RoundedCornerShape(12.dp))
-                        .padding(14.dp),
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Timeline,
-                                contentDescription = null,
-                                tint = NeonGreen,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = "🕒 全天关键时刻轨迹",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = NeonGreen,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        result.timelineHighlights.forEach { item ->
-                            Row(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(CardElevated)
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                ) {
-                                    Text(
-                                        text = item.timePeriod,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = NeonGreen,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                                Text(
-                                    text = if (item.title.isNotBlank()) "${item.title}：${item.content}" else item.content,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = TextPrimary,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-
-            // Unified Action Items (Interactive Checkbox)
-            if (result.unifiedActionItems.isNotEmpty()) {
-                val doneCount = result.unifiedActionItems.count { it.isDone }
-                val totalCount = result.unifiedActionItems.size
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(CardDark)
-                        .border(1.dp, SurfaceBorder, RoundedCornerShape(12.dp))
-                        .padding(14.dp),
-                ) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = NeonGreen,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Text(
-                                    text = "全天统一行动清单 ($doneCount/$totalCount)",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = TextPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    val text = result.unifiedActionItems.joinToString("\n") {
-                                        "${if (it.isDone) "[x]" else "[ ]"} ${it.text}"
-                                    }
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("LifeLog Todos", text))
-                                    Toast.makeText(context, "已复制待办清单", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(28.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "复制待办",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        result.unifiedActionItems.forEachIndexed { index, item ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable {
-                                        val updatedList = result.unifiedActionItems.toMutableList()
-                                        updatedList[index] = item.copy(isDone = !item.isDone)
-                                        parsedResult = result.copy(unifiedActionItems = updatedList)
-                                        existingLifeLog?.let { el ->
-                                            scope.launch(Dispatchers.IO) {
-                                                repository.updateActionItems(el.id, ActionItemModel.toJsonString(updatedList))
-                                            }
-                                        }
-                                    }
-                                    .padding(vertical = 5.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(
-                                    imageVector = if (item.isDone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                    contentDescription = null,
-                                    tint = if (item.isDone) NeonGreen else TextMuted,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Text(
-                                    text = item.text,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (item.isDone) TextMuted else TextPrimary,
-                                    textDecoration = if (item.isDone) TextDecoration.LineThrough else TextDecoration.None,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            // Empty / Call to Action
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(CardDark)
-                    .border(1.dp, SurfaceBorder, RoundedCornerShape(12.dp))
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = MintCyan.copy(alpha = 0.6f),
-                        modifier = Modifier.size(48.dp),
-                    )
-                    Text(
-                        text = if (dayRecords.isEmpty()) "今日暂无录音内容" else "今日已记录 ${dayRecords.size} 段声音",
+                        text = if (parsedResult != null) "复盘已生成" else "已记录 ${dayRecords.size} 段",
                         style = MaterialTheme.typography.titleMedium,
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = if (dayRecords.isEmpty())
-                            "开始随身录音后，在一天结束时可在此生成完整的全天复盘手记。"
-                        else
-                            "包含闲聊、会议、思考与待办。点击下方按钮一键提炼今日生活手记。",
+                        text = if (dayRecords.isEmpty()) {
+                            "这一天还没有录音"
+                        } else {
+                            "合计 ${Formatters.formatDuration(dayRecords.sumOf { it.durationMs })}"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
-
-                    if (dayRecords.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(NeonGreen)
-                                .clickable(enabled = !isGenerating, onClick = triggerGenerateLifeLog)
-                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                }
+                if (dayRecords.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(Dimens.fieldRadius))
+                            .background(if (isGenerating) CardElevated else ModeDigest)
+                            .clickable(enabled = !isGenerating, onClick = triggerGenerateLifeLog)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.gapXs),
                         ) {
+                            if (isGenerating) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    color = ModeDigest,
+                                    strokeWidth = 2.dp,
+                                )
+                            }
                             Text(
-                                text = if (isGenerating) "AI 正在提炼全天生活手记..." else "开始生成全天 LifeLog",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = PureBlack,
+                                text = when {
+                                    isGenerating -> "提炼中"
+                                    parsedResult != null -> "重新生成"
+                                    else -> "生成复盘"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isGenerating) TextSecondary else AccentOn,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
@@ -777,6 +332,274 @@ fun LifeLogScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(Dimens.pageBottomNavClearance))
+        Spacer(modifier = Modifier.height(Dimens.gapMd))
+
+        if (dayRecords.isNotEmpty()) {
+            SectionLabel("当天片段 (${dayRecords.size})")
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+            dayRecords.sortedBy { it.createdAt }.forEach { record ->
+                TimelineItem(
+                    record = record,
+                    onClick = { onRecordClick(record) },
+                )
+                Spacer(modifier = Modifier.height(Dimens.listGap))
+            }
+        }
+
+        val dayTasks = remember(dayRecords) {
+            dayRecords.sortedByDescending { it.createdAt }.flatMap { r ->
+                val items = ActionItemModel.fromJsonString(r.actionItems)
+                items.mapIndexed { idx, item ->
+                    TaskEntry(
+                        recordId = r.id,
+                        recordTitle = r.title?.ifBlank { null } ?: if (r.isMeeting()) "会议录音" else "随身记录",
+                        recordDate = r.createdAt,
+                        isLifeLog = false,
+                        isMeeting = r.isMeeting(),
+                        itemIndex = idx,
+                        item = item,
+                        allItemsInRecord = items,
+                    )
+                }
+            }
+        }
+
+        val result = parsedResult
+        if (result != null) {
+            TerminalCard(
+                borderColor = ModeDigest.copy(alpha = 0.3f),
+                backgroundColor = ModeDigest.copy(alpha = 0.08f),
+            ) {
+                Text(
+                    text = result.title.removePrefix("🌿 ").trim(),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (!result.dailyQuote.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm)) {
+                        Icon(
+                            imageVector = Icons.Outlined.FormatQuote,
+                            contentDescription = null,
+                            tint = ModeDigest,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = result.dailyQuote,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ModeDigest,
+                            fontStyle = FontStyle.Italic,
+                        )
+                    }
+                }
+            }
+
+            if (result.summary.isNotBlank()) {
+                Spacer(modifier = Modifier.height(Dimens.gapMd))
+                DigestSection(
+                    title = "综述",
+                    icon = Icons.Outlined.AutoAwesome,
+                    accent = ModeDigest,
+                    body = result.summary,
+                )
+            }
+            if (!result.socialAndChats.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(Dimens.gapMd))
+                DigestSection(
+                    title = "闲聊与社交",
+                    icon = Icons.Outlined.ChatBubbleOutline,
+                    accent = ModeCasual,
+                    body = result.socialAndChats,
+                )
+            }
+            if (!result.workAndDecisions.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(Dimens.gapMd))
+                DigestSection(
+                    title = "工作与决议",
+                    icon = Icons.Outlined.WorkOutline,
+                    accent = ModeMeeting,
+                    body = result.workAndDecisions,
+                )
+            }
+            if (result.timelineHighlights.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(Dimens.gapMd))
+                TerminalCard {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Timeline,
+                            contentDescription = null,
+                            tint = ModeDigest,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        SectionLabel("关键时刻")
+                    }
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                    result.timelineHighlights.forEach { item ->
+                        Row(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(Dimens.chipRadius))
+                                    .background(CardElevated)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = item.timePeriod,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = ModeDigest,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            Text(
+                                text = if (item.title.isNotBlank()) "${item.title}：${item.content}" else item.content,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            TerminalCard {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = Dimens.gapLg),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = ModeDigest.copy(alpha = 0.7f),
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Text(
+                        text = if (dayRecords.isEmpty()) "这一天还没有声音" else "已有 ${dayRecords.size} 段记录",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = if (dayRecords.isEmpty()) {
+                            "录完一天后，可以在这里生成复盘。"
+                        } else {
+                            "把当天的闲聊、会议和待办收成一篇手记。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+
+        if (dayTasks.isNotEmpty()) {
+            val doneCount = dayTasks.count { it.item.isDone }
+            val totalCount = dayTasks.size
+            Spacer(modifier = Modifier.height(Dimens.gapMd))
+            TerminalCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SectionLabel("当日待办 ($doneCount/$totalCount)")
+                    IconButton(
+                        onClick = {
+                            val text = dayTasks.filter { !it.item.isDone }.joinToString("\n") {
+                                "- [ ] ${it.item.text}"
+                            }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("今日待办", text))
+                            Toast.makeText(context, "已复制待办", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制待办",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(Dimens.gapSm))
+                dayTasks.forEach { entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Dimens.chipRadius))
+                            .clickable {
+                                val updatedItems = entry.allItemsInRecord.toMutableList()
+                                if (entry.itemIndex in updatedItems.indices) {
+                                    val current = updatedItems[entry.itemIndex]
+                                    updatedItems[entry.itemIndex] = current.copy(isDone = !current.isDone)
+                                    scope.launch(Dispatchers.IO) {
+                                        repository.updateActionItems(
+                                            entry.recordId,
+                                            ActionItemModel.toJsonString(updatedItems),
+                                        )
+                                        reloadDayData()
+                                    }
+                                }
+                            }
+                            .padding(vertical = 5.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+                    ) {
+                        Icon(
+                            imageVector = if (entry.item.isDone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (entry.item.isDone) ModeDigest else TextMuted,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = entry.item.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (entry.item.isDone) TextMuted else TextPrimary,
+                            textDecoration = if (entry.item.isDone) TextDecoration.LineThrough else TextDecoration.None,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Dimens.gapXl))
+    }
+}
+
+@Composable
+private fun DigestSection(
+    title: String,
+    icon: ImageVector,
+    accent: androidx.compose.ui.graphics.Color,
+    body: String,
+) {
+    TerminalCard(borderColor = accent.copy(alpha = 0.28f)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(16.dp),
+            )
+            SectionLabel(title, color = accent)
+        }
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextPrimary,
+        )
     }
 }
