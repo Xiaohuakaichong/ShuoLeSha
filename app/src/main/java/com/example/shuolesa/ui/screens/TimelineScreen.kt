@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -81,14 +82,16 @@ fun TimelineScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val allRecords by repository.observeAllRecords().collectAsState(initial = emptyList())
+    val allRecords by produceState<List<AudioRecordEntity>?>(initialValue = null, repository) {
+        repository.observeAllRecords().collect { value = it }
+    }
     val lifelogTriggerDuration by prefs.lifelogTriggerDuration.collectAsState(initial = 2)
 
     var selectedFilter by remember { mutableStateOf("全部") }
     var isImporting by remember { mutableStateOf(false) }
 
     val streamRecords = remember(allRecords) {
-        allRecords.filter { !it.isDailyLifeLogSummary() }
+        allRecords.orEmpty().filter { !it.isDailyLifeLogSummary() }
     }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
@@ -245,7 +248,9 @@ fun TimelineScreen(
 
         Spacer(modifier = Modifier.height(Dimens.gapMd))
 
-        if (filteredRecords.isEmpty()) {
+        if (allRecords == null) {
+            Spacer(modifier = Modifier.weight(1f))
+        } else if (filteredRecords.isEmpty()) {
             EmptyTimeline(
                 hasAnyRecords = streamRecords.isNotEmpty(),
                 selectedFilter = selectedFilter,
@@ -281,17 +286,6 @@ private fun EmptyTimeline(
     triggerSeconds: Int,
     onRetryFailed: () -> Unit = {},
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "empty")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.55f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "emptyAlpha",
-    )
-
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -304,10 +298,9 @@ private fun EmptyTimeline(
             else -> "试试切换上方筛选。"
         }
         EmptyState(
-            symbol = "○",
+            symbol = "",
             title = title,
             subtitle = subtitle,
-            modifier = Modifier.alpha(alpha),
         )
 
         if (selectedFilter == "失败" && hasAnyRecords) {

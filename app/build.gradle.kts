@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.shuolesa"
         minSdk = 29
         targetSdk = 36
-        versionCode = 11
-        versionName = "3.0.2"
+        versionCode = 12
+        versionName = "3.0.3"
     }
 
     buildTypes {

@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -82,12 +83,14 @@ fun TasksScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val allRecords by repository.observeAllRecords().collectAsState(initial = emptyList())
+    val allRecords by produceState<List<AudioRecordEntity>?>(initialValue = null, repository) {
+        repository.observeAllRecords().collect { value = it }
+    }
     var selectedFilter by remember { mutableStateOf("进行中") }
 
     val allTasks = remember(allRecords) {
         val list = mutableListOf<TaskEntry>()
-        allRecords.sortedByDescending { it.createdAt }.forEach { r ->
+        allRecords.orEmpty().sortedByDescending { it.createdAt }.forEach { r ->
             if (r.isDailyLifeLogSummary()) return@forEach
             if (!r.actionItems.isNullOrBlank() && r.actionItems != "[]") {
                 val parsedItems = ActionItemModel.fromJsonString(r.actionItems)
@@ -183,7 +186,9 @@ fun TasksScreen(
 
         Spacer(modifier = Modifier.height(Dimens.gapMd))
 
-        if (filteredTasks.isEmpty()) {
+        if (allRecords == null) {
+            Spacer(modifier = Modifier.weight(1f))
+        } else if (filteredTasks.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -228,7 +233,7 @@ fun TasksScreen(
                         entry = entry,
                         onToggle = { toggleTask(entry) },
                         onNavigate = {
-                            val target = allRecords.find { it.id == entry.recordId }
+                            val target = allRecords.orEmpty().find { it.id == entry.recordId }
                             if (target != null) {
                                 onRecordClick(target)
                             }

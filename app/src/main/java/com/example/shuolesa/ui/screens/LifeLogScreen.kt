@@ -99,6 +99,7 @@ fun LifeLogScreen(
     var existingLifeLog by remember { mutableStateOf<AudioRecordEntity?>(null) }
     var parsedResult by remember { mutableStateOf<LifeLogResult?>(null) }
     var isGenerating by remember { mutableStateOf(false) }
+    var dayReady by remember { mutableStateOf(false) }
 
     fun reloadDayData() {
         scope.launch(Dispatchers.IO) {
@@ -114,6 +115,7 @@ fun LifeLogScreen(
                 parsedResult = if (lifeLogRecord != null && !lifeLogRecord.agentResult.isNullOrBlank()) {
                     LifeLogResult.fromJson(lifeLogRecord.agentResult)
                 } else null
+                dayReady = true
             }
         }
     }
@@ -465,7 +467,7 @@ fun LifeLogScreen(
                     }
                 }
             }
-        } else {
+        } else if (dayReady) {
             TerminalCard {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(vertical = Dimens.gapLg),

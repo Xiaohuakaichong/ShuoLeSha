@@ -53,6 +53,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -165,26 +169,36 @@ fun AppNavigation() {
                 }
             },
         ) { paddingValues ->
-            Box(modifier = Modifier.padding(paddingValues)) {
-                when (selectedTab) {
-                    0 -> TimelineScreen(
+            var visitedTabs by remember { mutableStateOf(setOf(selectedTab)) }
+            LaunchedEffect(selectedTab) {
+                visitedTabs = visitedTabs + selectedTab
+            }
+            Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+                KeepAliveTab(selected = selectedTab == 0, visited = 0 in visitedTabs) {
+                    TimelineScreen(
                         repository = repository,
                         prefs = prefs,
                         onRecordClick = { record -> selectedRecord = record },
                         onOpenSettings = onOpenSettings,
                     )
-                    1 -> LifeLogScreen(
+                }
+                KeepAliveTab(selected = selectedTab == 1, visited = 1 in visitedTabs) {
+                    LifeLogScreen(
                         repository = repository,
                         prefs = prefs,
                         onOpenSettings = onOpenSettings,
                         onRecordClick = { record -> selectedRecord = record },
                     )
-                    2 -> TasksScreen(
+                }
+                KeepAliveTab(selected = selectedTab == 2, visited = 2 in visitedTabs) {
+                    TasksScreen(
                         repository = repository,
                         onRecordClick = { record -> selectedRecord = record },
                         onOpenSettings = onOpenSettings,
                     )
-                    3 -> NodeSettingsScreen(
+                }
+                KeepAliveTab(selected = selectedTab == 3, visited = 3 in visitedTabs) {
+                    NodeSettingsScreen(
                         prefs = prefs,
                         permissionHelper = permissionHelper,
                     )
@@ -224,6 +238,37 @@ fun AppNavigation() {
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun KeepAliveTab(
+    selected: Boolean,
+    visited: Boolean,
+    content: @Composable () -> Unit,
+) {
+    if (!visited) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(if (selected) 1f else 0f)
+            .graphicsLayer { alpha = if (selected) 1f else 0f }
+            .then(
+                if (selected) {
+                    Modifier
+                } else {
+                    Modifier.pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    }
+                },
+            ),
+    ) {
+        content()
     }
 }
 

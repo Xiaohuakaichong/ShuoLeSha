@@ -484,12 +484,14 @@ fun EmptyState(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = symbol,
-            style = MaterialTheme.typography.displayLarge,
-            color = TextMuted,
-        )
-        Spacer(modifier = Modifier.height(Dimens.gapSm))
+        if (symbol.isNotBlank()) {
+            Text(
+                text = symbol,
+                style = MaterialTheme.typography.displayLarge,
+                color = TextMuted,
+            )
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+        }
         Text(
             text = title,
             style = MaterialTheme.typography.headlineMedium,
