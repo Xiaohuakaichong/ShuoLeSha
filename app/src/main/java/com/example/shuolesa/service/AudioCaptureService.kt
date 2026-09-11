@@ -51,6 +51,18 @@ class AudioCaptureService : Service() {
         var elapsedMs = 0L
             private set
 
+        @Volatile
+        var currentRecordingMode: String = "lifelog"
+            private set
+
+        @Volatile
+        var currentRecordingModeTitle: String = "🌿 LifeLog 随身省流记"
+            private set
+
+        @Volatile
+        var currentRecordingFormatDesc: String = "AAC 硬件压缩 · 24kbps (~10MB/h)"
+            private set
+
         // Callbacks for UI updates
         var onStateChanged: ((Boolean) -> Unit)? = null
         var onElapsedChanged: ((Long) -> Unit)? = null
@@ -139,6 +151,15 @@ class AudioCaptureService : Service() {
         val mode = overrideMode ?: kotlinx.coroutines.runBlocking { prefs.getRecordingModeSync() }
         val bitrate = kotlinx.coroutines.runBlocking { prefs.getLifelogBitrateKbpsSync() }
         val meetingFmt = kotlinx.coroutines.runBlocking { prefs.getMeetingFormatSync() }
+
+        currentRecordingMode = mode
+        currentRecordingModeTitle = if (mode == "meeting") "💼 高保真会议录音" else "🌿 LifeLog 随身省流记"
+        currentRecordingFormatDesc = if (mode == "meeting") {
+            if (meetingFmt == "wav") "无损 WAV · 16kHz 原始采样" else "高清 AAC · 64kbps"
+        } else {
+            val mbPerHour = when (bitrate) { 16 -> 7; 24 -> 10; 32 -> 14; else -> 10 }
+            "AAC 硬件压缩 · ${bitrate}kbps (~${mbPerHour}MB/h)"
+        }
 
         val chunkMgr = ChunkManager(
             context = this,

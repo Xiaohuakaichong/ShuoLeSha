@@ -4,9 +4,11 @@ import android.content.Intent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,9 +27,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.shuolesa.service.AudioCaptureService
 import com.example.shuolesa.theme.BgDark
 import com.example.shuolesa.theme.DangerRed
@@ -92,12 +99,31 @@ fun ActiveRecordingScreen(
             textAlign = TextAlign.Center,
         )
 
+        Spacer(modifier = Modifier.height(Dimens.gapMd))
+
+        val isMeeting = AudioCaptureService.currentRecordingMode == "meeting"
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(if (isMeeting) MintCyan.copy(alpha = 0.15f) else NeonGreen.copy(alpha = 0.15f))
+                .border(1.dp, if (isMeeting) MintCyan.copy(alpha = 0.4f) else NeonGreen.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+        ) {
+            Text(
+                text = AudioCaptureService.currentRecordingModeTitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (isMeeting) MintCyan else NeonGreen,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
         Spacer(modifier = Modifier.height(Dimens.gapSm))
 
         Text(
-            text = "正在以 Opus 高保真压缩编码…",
+            text = "正在以 ${AudioCaptureService.currentRecordingFormatDesc} 持续采集…",
             style = MaterialTheme.typography.bodyMedium,
             color = TextMuted,
+            textAlign = TextAlign.Center,
         )
 
         Spacer(modifier = Modifier.weight(1f))

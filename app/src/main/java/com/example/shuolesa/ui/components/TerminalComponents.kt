@@ -186,17 +186,19 @@ fun StatusBadge(
 fun TagChip(
     tag: String,
     modifier: Modifier = Modifier,
+    color: Color = ElectricBlue,
 ) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(ElectricBlue.copy(alpha = 0.12f))
+            .background(color.copy(alpha = 0.12f))
             .padding(horizontal = 7.dp, vertical = 3.dp),
     ) {
+        val label = if (tag.startsWith("#")) tag else "#$tag"
         Text(
-            text = "#$tag",
+            text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = ElectricBlue,
+            color = color,
             fontSize = 11.sp,
         )
     }

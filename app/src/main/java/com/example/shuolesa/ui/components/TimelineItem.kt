@@ -2,6 +2,7 @@ package com.example.shuolesa.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,13 +82,14 @@ fun TimelineItem(
         list
     }
 
-    val isLifeLog = remember(record.tags) { record.tags.orEmpty().contains("LifeLog") }
+    val isLifeLogSummary = record.isDailyLifeLogSummary()
+    val isMeeting = record.isMeeting()
 
     TerminalCard(
         modifier = modifier.clickable(onClick = onClick),
-        borderColor = if (isLifeLog) NeonGreen.copy(alpha = 0.45f) else SurfaceBorder,
+        borderColor = if (isLifeLogSummary) NeonGreen.copy(alpha = 0.45f) else if (isMeeting) MintCyan.copy(alpha = 0.35f) else SurfaceBorder,
     ) {
-        // Top Header: Time, Duration pill, Status Badge
+        // Top Header: Time, Mode Badge, Duration & Format pill, Status Badge
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -95,7 +97,7 @@ fun TimelineItem(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     text = timeStr,
@@ -103,22 +105,39 @@ fun TimelineItem(
                     color = TextPrimary,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (isLifeLog) {
+                if (isLifeLogSummary) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(NeonGreen.copy(alpha = 0.15f))
+                            .border(1.dp, NeonGreen.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
                         Text(
                             text = "🌿 全天复盘",
                             style = MaterialTheme.typography.labelSmall,
                             color = NeonGreen,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                         )
                     }
                 } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isMeeting) MintCyan.copy(alpha = 0.15f) else NeonGreen.copy(alpha = 0.12f))
+                            .border(1.dp, if (isMeeting) MintCyan.copy(alpha = 0.35f) else NeonGreen.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = if (isMeeting) "💼 会议" else "🌿 随身",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isMeeting) MintCyan else NeonGreen,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
@@ -129,7 +148,21 @@ fun TimelineItem(
                             text = "⏱️ $durationStr",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(CardElevated)
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = record.getDisplayFormatInfo().substringBefore(" ·"),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextMuted,
+                            fontSize = 9.sp,
                         )
                     }
                 }
@@ -140,7 +173,8 @@ fun TimelineItem(
         Spacer(modifier = Modifier.height(10.dp))
 
         // Title
-        val titleText = record.title?.takeIf { it.isNotBlank() } ?: "随手语音记录 #${record.id}"
+        val defaultTitle = if (isMeeting) "会议录音 #${record.id}" else "随身生活记录 #${record.id}"
+        val titleText = record.title?.takeIf { it.isNotBlank() } ?: defaultTitle
         Text(
             text = titleText,
             style = MaterialTheme.typography.titleLarge,
@@ -228,12 +262,17 @@ fun TimelineItem(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f),
             ) {
-                if (tags.isNotEmpty()) {
-                    tags.take(3).forEach { tag ->
+                val modeColor = if (isMeeting) MintCyan else NeonGreen
+                val modeLabel = if (isMeeting) "会议" else "LifeLog"
+                TagChip(tag = modeLabel, color = modeColor)
+
+                val displayTags = tags.filter { !it.contains("会议") && !it.contains("LifeLog") }
+                if (displayTags.isNotEmpty()) {
+                    displayTags.take(2).forEach { tag ->
                         TagChip(tag = tag)
                     }
                 } else {
-                    TagChip(tag = "随手记")
+                    TagChip(tag = if (isMeeting) "商务工作" else "日常闲聊")
                 }
             }
 

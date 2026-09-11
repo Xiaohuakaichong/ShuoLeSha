@@ -87,10 +87,18 @@ class UploadWorker(
             )
 
             val notes = llmResult.getOrNull()
-            val title = notes?.title ?: "随手语音"
+            val isMeeting = record.isMeeting()
+            val defaultTitle = if (isMeeting) "会议纪要" else "随身生活记录"
+            val title = notes?.title?.takeIf { it.isNotBlank() } ?: defaultTitle
             val summary = notes?.summary ?: transcription
             val actionItemsJson = notes?.actionItems?.let { com.example.shuolesa.data.model.ActionItemModel.toJsonString(it) }
-            val tagsJson = notes?.tags?.let { org.json.JSONArray(it).toString() }
+
+            val tagsList = notes?.tags?.toMutableList() ?: mutableListOf()
+            val modeTag = if (isMeeting) "会议" else "LifeLog"
+            if (!tagsList.contains(modeTag)) {
+                tagsList.add(0, modeTag)
+            }
+            val tagsJson = org.json.JSONArray(tagsList).toString()
             val rawJson = notes?.rawJson ?: transcription
             val finalTranscription = notes?.structuredTranscript?.takeIf { it.isNotBlank() } ?: transcription
 

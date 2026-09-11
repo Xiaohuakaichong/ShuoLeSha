@@ -173,6 +173,9 @@ fun TimelineScreen(
                     createdAt = System.currentTimeMillis(),
                     status = AudioRecordEntity.STATUS_PENDING,
                     title = cleanTitle,
+                    recordingMode = "meeting",
+                    audioFormat = targetFile.extension.lowercase(),
+                    tags = "[\"导入音频\", \"会议\"]",
                 )
                 repository.insertRecord(record)
 

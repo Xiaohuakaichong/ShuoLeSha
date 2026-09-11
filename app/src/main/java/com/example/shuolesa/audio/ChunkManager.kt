@@ -120,6 +120,11 @@ class ChunkManager(
 
     private fun registerChunk(file: File, index: Int, startTime: Long, durationMs: Long, sizeBytes: Long) {
         val fileSize = if (file.exists()) file.length() else sizeBytes
+        val isMeeting = recordingMode == "meeting"
+        val fmt = if (isMeeting) meetingFormat else "aac_${lifelogBitrateKbps}k"
+        val initialTitle = if (isMeeting) "会议录音 #${index + 1}" else "随身生活记录 #${index + 1}"
+        val initialTags = if (isMeeting) "[\"会议\"]" else "[\"LifeLog\"]"
+
         val record = AudioRecordEntity(
             sessionId = sessionId,
             chunkIndex = index,
@@ -127,6 +132,10 @@ class ChunkManager(
             durationMs = durationMs,
             fileSizeBytes = fileSize,
             createdAt = startTime,
+            recordingMode = recordingMode,
+            audioFormat = fmt,
+            title = initialTitle,
+            tags = initialTags,
         )
         scope.launch {
             try {

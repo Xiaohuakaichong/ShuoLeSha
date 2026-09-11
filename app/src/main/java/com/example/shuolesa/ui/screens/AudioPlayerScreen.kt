@@ -438,7 +438,48 @@ fun AudioPlayerScreen(
                     StatusBadge(status = currentRecord.status)
                 }
 
-                Spacer(modifier = Modifier.height(Dimens.gapXs))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Mode & Audio Format Specification Badges
+                val isMeeting = currentRecord.isMeeting()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isMeeting) MintCyan.copy(alpha = 0.15f) else NeonGreen.copy(alpha = 0.15f))
+                            .border(1.dp, if (isMeeting) MintCyan.copy(alpha = 0.4f) else NeonGreen.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = if (isMeeting) "💼 高保真会议录音" else "🌿 LifeLog 随身省流记",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isMeeting) MintCyan else NeonGreen,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(CardElevated)
+                            .border(1.dp, SurfaceBorder, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = "🎵 ${currentRecord.getDisplayFormatInfo()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -452,7 +493,7 @@ fun AudioPlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = Formatters.formatFileSize(currentRecord.fileSizeBytes),
+                        text = "${Formatters.formatFileSize(currentRecord.fileSizeBytes)} · ${currentRecord.getEstimatedBitrateDesc()}",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
                     )
@@ -484,26 +525,26 @@ fun AudioPlayerScreen(
             }
 
             // 2. Title & Summary Card
-            if (!currentRecord.title.isNullOrBlank() || !currentRecord.summary.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(Dimens.gapMd))
-                TerminalCard {
-                    currentRecord.title?.takeIf { it.isNotBlank() }?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(modifier = Modifier.height(Dimens.gapSm))
-                    }
-                    currentRecord.summary?.takeIf { it.isNotBlank() }?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary,
-                            lineHeight = 22.sp,
-                        )
-                    }
+            val isMeeting = currentRecord.isMeeting()
+            val fallbackTitle = if (isMeeting) "💼 会议录音 #${currentRecord.id}" else "🌿 随身生活记录 #${currentRecord.id}"
+            val displayTitle = currentRecord.title?.takeIf { it.isNotBlank() } ?: fallbackTitle
+
+            Spacer(modifier = Modifier.height(Dimens.gapMd))
+            TerminalCard {
+                Text(
+                    text = displayTitle,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (!currentRecord.summary.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                    Text(
+                        text = currentRecord.summary!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
+                        lineHeight = 22.sp,
+                    )
                 }
             }
 
