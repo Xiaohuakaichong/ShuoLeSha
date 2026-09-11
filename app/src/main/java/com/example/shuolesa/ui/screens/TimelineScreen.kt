@@ -6,22 +6,14 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,7 +22,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FileUpload
-import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,7 +39,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,16 +50,12 @@ import com.example.shuolesa.network.UploadWorker
 import com.example.shuolesa.theme.Accent
 import com.example.shuolesa.theme.AccentOn
 import com.example.shuolesa.theme.Dimens
-import com.example.shuolesa.theme.ModeCasual
-import com.example.shuolesa.theme.ModeMeeting
 import com.example.shuolesa.theme.DangerRed
 import com.example.shuolesa.theme.TextSecondary
 import com.example.shuolesa.ui.components.EmptyState
-import com.example.shuolesa.ui.components.DatePreset
-import com.example.shuolesa.ui.components.FilterAnchor
 import com.example.shuolesa.ui.components.PageHeader
 import com.example.shuolesa.ui.components.RecordFilter
-import com.example.shuolesa.ui.components.RecordFilterSheet
+import com.example.shuolesa.ui.components.RecordFilterMenus
 import com.example.shuolesa.ui.components.TimelineItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -95,7 +81,6 @@ fun TimelineScreen(
     val lifelogTriggerDuration by prefs.lifelogTriggerDuration.collectAsState(initial = 2)
 
     var filter by remember { mutableStateOf(RecordFilter()) }
-    var showFilterSheet by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AudioRecordEntity?>(null) }
     var isImporting by remember { mutableStateOf(false) }
 
@@ -186,11 +171,16 @@ fun TimelineScreen(
         PageHeader(
             title = "记录",
             trailing = {
-                IconButton(onClick = { showFilterSheet = true }) {
-                    Icon(
-                        imageVector = Icons.Outlined.FilterList,
-                        contentDescription = "筛选",
-                        tint = if (filter.isDefault) Accent else Accent,
+                if (!filter.isDefault) {
+                    Text(
+                        text = "重置",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Accent,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(Dimens.chipRadius))
+                            .clickable { filter = RecordFilter() }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                     )
                 }
                 val failedCount = streamRecords.count { it.status == AudioRecordEntity.STATUS_FAILED }
@@ -234,35 +224,10 @@ fun TimelineScreen(
 
         Spacer(modifier = Modifier.height(Dimens.gapSm))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FilterAnchor(
-                label = filter.dateLabel(),
-                active = filter.datePreset != DatePreset.ALL,
-                onClick = { showFilterSheet = true },
-            )
-            FilterAnchor(
-                label = if (filter.mode == "全部") "类型" else filter.mode,
-                active = filter.mode != "全部",
-                onClick = { showFilterSheet = true },
-            )
-            FilterAnchor(
-                label = if (filter.status == "全部") "状态" else filter.status,
-                active = filter.status != "全部",
-                onClick = { showFilterSheet = true },
-            )
-            if (!filter.isDefault) {
-                Text(
-                    text = "重置",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Accent,
-                    modifier = Modifier.clickable { filter = RecordFilter() },
-                )
-            }
-        }
+        RecordFilterMenus(
+            filter = filter,
+            onChange = { filter = it },
+        )
 
         Spacer(modifier = Modifier.height(Dimens.gapMd))
 
@@ -295,14 +260,6 @@ fun TimelineScreen(
                 }
             }
         }
-    }
-
-    if (showFilterSheet) {
-        RecordFilterSheet(
-            filter = filter,
-            onChange = { filter = it },
-            onDismiss = { showFilterSheet = false },
-        )
     }
 
     pendingDelete?.let { target ->

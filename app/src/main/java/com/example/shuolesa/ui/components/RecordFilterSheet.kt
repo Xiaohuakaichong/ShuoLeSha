@@ -1,36 +1,39 @@
 package com.example.shuolesa.ui.components
 
-import android.app.DatePickerDialog
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DisplayMode
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.shuolesa.data.db.AudioRecordEntity
@@ -38,17 +41,19 @@ import com.example.shuolesa.theme.Accent
 import com.example.shuolesa.theme.AppColor
 import com.example.shuolesa.theme.CardElevated
 import com.example.shuolesa.theme.Dimens
-import com.example.shuolesa.theme.SurfaceBorder
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.util.Formatters
 import java.util.Calendar
+import java.util.TimeZone
 
-enum class DatePreset { ALL, TODAY, YESTERDAY, LAST_7, DAY }
+enum class DatePreset { ALL, TODAY, YESTERDAY, LAST_7, DAY, RANGE }
 
 data class RecordFilter(
     val datePreset: DatePreset = DatePreset.ALL,
     val dayMs: Long = 0L,
+    val rangeStartMs: Long = 0L,
+    val rangeEndMs: Long = 0L,
     val mode: String = "全部",
     val status: String = "全部",
 ) {
@@ -56,11 +61,12 @@ data class RecordFilter(
         get() = datePreset == DatePreset.ALL && mode == "全部" && status == "全部"
 
     fun dateLabel(): String = when (datePreset) {
-        DatePreset.ALL -> "全部日期"
+        DatePreset.ALL -> "日期"
         DatePreset.TODAY -> "今天"
         DatePreset.YESTERDAY -> "昨天"
         DatePreset.LAST_7 -> "近 7 天"
         DatePreset.DAY -> Formatters.formatDateOnly(dayMs)
+        DatePreset.RANGE -> compactRangeLabel(rangeStartMs, rangeEndMs)
     }
 
     fun matches(record: AudioRecordEntity): Boolean {
@@ -91,8 +97,50 @@ data class RecordFilter(
             }
             DatePreset.LAST_7 -> createdAt >= Formatters.getStartOfDay(now - 6 * 24 * 60 * 60 * 1000L)
             DatePreset.DAY -> createdAt in Formatters.getStartOfDay(dayMs)..Formatters.getEndOfDay(dayMs)
+            DatePreset.RANGE -> createdAt in Formatters.getStartOfDay(rangeStartMs)..Formatters.getEndOfDay(rangeEndMs)
         }
     }
+}
+
+private fun compactRangeLabel(startMs: Long, endMs: Long): String {
+    val start = Formatters.formatDateOnly(startMs)
+    val end = Formatters.formatDateOnly(endMs)
+    return if (start.take(4) == end.take(4)) {
+        "${start.drop(5)} – ${end.drop(5)}"
+    } else {
+        "$start – $end"
+    }
+}
+
+/** DatePicker / DateRangePicker emit UTC midnight; convert to local noon for day-range matching. */
+private fun utcMillisToLocalNoon(utcMillis: Long): Long {
+    val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = utcMillis }
+    return Calendar.getInstance().apply {
+        set(
+            utc.get(Calendar.YEAR),
+            utc.get(Calendar.MONTH),
+            utc.get(Calendar.DAY_OF_MONTH),
+            12,
+            0,
+            0,
+        )
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+}
+
+private fun localMillisToUtcDate(localMillis: Long): Long {
+    val local = Calendar.getInstance().apply { timeInMillis = localMillis }
+    return Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        set(
+            local.get(Calendar.YEAR),
+            local.get(Calendar.MONTH),
+            local.get(Calendar.DAY_OF_MONTH),
+            0,
+            0,
+            0,
+        )
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 }
 
 @Composable
@@ -109,13 +157,13 @@ fun FilterAnchor(
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
             color = if (active) Accent else TextPrimary,
             fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
         )
         Icon(
             imageVector = Icons.Outlined.ExpandMore,
@@ -126,131 +174,160 @@ fun FilterAnchor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecordFilterSheet(
-    filter: RecordFilter,
-    onChange: (RecordFilter) -> Unit,
-    onDismiss: () -> Unit,
+fun FilterDropdown(
+    label: String,
+    active: Boolean,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    items: List<Pair<String, () -> Unit>>,
+    modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    fun pickDay() {
-        val cal = Calendar.getInstance()
-        if (filter.datePreset == DatePreset.DAY && filter.dayMs > 0) {
-            cal.timeInMillis = filter.dayMs
-        }
-        DatePickerDialog(
-            context,
-            { _, year, month, day ->
-                val picked = Calendar.getInstance().apply { set(year, month, day, 12, 0, 0) }
-                onChange(filter.copy(datePreset = DatePreset.DAY, dayMs = picked.timeInMillis))
-            },
-            cal.get(Calendar.YEAR),
-            cal.get(Calendar.MONTH),
-            cal.get(Calendar.DAY_OF_MONTH),
-        ).show()
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = AppColor.surface,
-        dragHandle = null,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Dimens.pagePaddingH, vertical = Dimens.gapMd),
+    Box(modifier = modifier) {
+        FilterAnchor(label = label, active = active, onClick = { onExpandedChange(true) })
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+            modifier = Modifier.background(AppColor.surface),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
-                ) {
-                    Icon(Icons.Outlined.FilterList, contentDescription = null, tint = Accent)
-                    Text(
-                        text = "筛选记录",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "关闭", tint = TextMuted)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Dimens.gapMd))
-            SectionLabel("日期")
-            Spacer(modifier = Modifier.height(Dimens.gapSm))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
-                verticalArrangement = Arrangement.spacedBy(Dimens.gapSm),
-            ) {
-                FilterChip("全部", filter.datePreset == DatePreset.ALL, { onChange(filter.copy(datePreset = DatePreset.ALL)) })
-                FilterChip("今天", filter.datePreset == DatePreset.TODAY, { onChange(filter.copy(datePreset = DatePreset.TODAY)) })
-                FilterChip("昨天", filter.datePreset == DatePreset.YESTERDAY, { onChange(filter.copy(datePreset = DatePreset.YESTERDAY)) })
-                FilterChip("近 7 天", filter.datePreset == DatePreset.LAST_7, { onChange(filter.copy(datePreset = DatePreset.LAST_7)) })
-                FilterChip(
-                    if (filter.datePreset == DatePreset.DAY) Formatters.formatDateOnly(filter.dayMs) else "选日期",
-                    filter.datePreset == DatePreset.DAY,
-                    { pickDay() },
+            items.forEach { (title, action) ->
+                DropdownMenuItem(
+                    text = { Text(title, color = TextPrimary) },
+                    onClick = {
+                        onExpandedChange(false)
+                        action()
+                    },
                 )
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(Dimens.gapLg))
-            SectionLabel("类型")
-            Spacer(modifier = Modifier.height(Dimens.gapSm))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm)) {
-                listOf("全部", "随身", "会议").forEach { option ->
-                    FilterChip(option, filter.mode == option, { onChange(filter.copy(mode = option)) })
-                }
-            }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RecordFilterMenus(
+    filter: RecordFilter,
+    onChange: (RecordFilter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var dateMenu by remember { mutableStateOf(false) }
+    var modeMenu by remember { mutableStateOf(false) }
+    var statusMenu by remember { mutableStateOf(false) }
+    var showDayPicker by remember { mutableStateOf(false) }
+    var showRangePicker by remember { mutableStateOf(false) }
 
-            Spacer(modifier = Modifier.height(Dimens.gapLg))
-            SectionLabel("状态")
-            Spacer(modifier = Modifier.height(Dimens.gapSm))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm)) {
-                listOf("全部", "已完成", "处理中", "失败").forEach { option ->
-                    FilterChip(option, filter.status == option, { onChange(filter.copy(status = option)) })
-                }
-            }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterDropdown(
+            label = filter.dateLabel(),
+            active = filter.datePreset != DatePreset.ALL,
+            expanded = dateMenu,
+            onExpandedChange = { dateMenu = it },
+            items = listOf(
+                "全部日期" to { onChange(filter.copy(datePreset = DatePreset.ALL)) },
+                "今天" to { onChange(filter.copy(datePreset = DatePreset.TODAY)) },
+                "昨天" to { onChange(filter.copy(datePreset = DatePreset.YESTERDAY)) },
+                "近 7 天" to { onChange(filter.copy(datePreset = DatePreset.LAST_7)) },
+                "选择单日" to { showDayPicker = true },
+                "选择区间" to { showRangePicker = true },
+            ),
+        )
+        FilterDropdown(
+            label = if (filter.mode == "全部") "类型" else filter.mode,
+            active = filter.mode != "全部",
+            expanded = modeMenu,
+            onExpandedChange = { modeMenu = it },
+            items = listOf("全部", "随身", "会议").map { option ->
+                option to { onChange(filter.copy(mode = option)) }
+            },
+        )
+        FilterDropdown(
+            label = if (filter.status == "全部") "状态" else filter.status,
+            active = filter.status != "全部",
+            expanded = statusMenu,
+            onExpandedChange = { statusMenu = it },
+            items = listOf("全部", "已完成", "处理中", "失败").map { option ->
+                option to { onChange(filter.copy(status = option)) }
+            },
+        )
+    }
 
-            Spacer(modifier = Modifier.height(Dimens.gapXl))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(Dimens.radiusFull))
-                        .background(CardElevated)
-                        .clickable { onChange(RecordFilter()) }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("重置", style = MaterialTheme.typography.labelLarge, color = TextMuted)
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(Dimens.radiusFull))
-                        .background(Accent)
-                        .clickable(onClick = onDismiss)
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("完成", style = MaterialTheme.typography.labelLarge, color = AppColor.onPrimary, fontWeight = FontWeight.SemiBold)
-                }
-            }
-            Spacer(modifier = Modifier.height(Dimens.gapLg))
+    if (showDayPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = localMillisToUtcDate(
+                if (filter.dayMs > 0) filter.dayMs else System.currentTimeMillis(),
+            ),
+            initialDisplayMode = DisplayMode.Picker,
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDayPicker = false },
+            confirmButton = {
+                TextButton(
+                    enabled = pickerState.selectedDateMillis != null,
+                    onClick = {
+                        val utc = pickerState.selectedDateMillis ?: return@TextButton
+                        onChange(filter.copy(datePreset = DatePreset.DAY, dayMs = utcMillisToLocalNoon(utc)))
+                        showDayPicker = false
+                    },
+                ) { Text("确定", color = Accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDayPicker = false }) { Text("取消", color = TextMuted) }
+            },
+        ) {
+            DatePicker(state = pickerState, showModeToggle = false)
+        }
+    }
+
+    if (showRangePicker) {
+        val rangeState = rememberDateRangePickerState(
+            initialSelectedStartDateMillis = filter.rangeStartMs.takeIf { it > 0 }?.let(::localMillisToUtcDate),
+            initialSelectedEndDateMillis = filter.rangeEndMs.takeIf { it > 0 }?.let(::localMillisToUtcDate),
+            initialDisplayMode = DisplayMode.Picker,
+        )
+        val canConfirm = rangeState.selectedStartDateMillis != null && rangeState.selectedEndDateMillis != null
+        DatePickerDialog(
+            onDismissRequest = { showRangePicker = false },
+            confirmButton = {
+                TextButton(
+                    enabled = canConfirm,
+                    onClick = {
+                        val start = rangeState.selectedStartDateMillis ?: return@TextButton
+                        val end = rangeState.selectedEndDateMillis ?: return@TextButton
+                        onChange(
+                            filter.copy(
+                                datePreset = DatePreset.RANGE,
+                                rangeStartMs = utcMillisToLocalNoon(start),
+                                rangeEndMs = utcMillisToLocalNoon(end),
+                            ),
+                        )
+                        showRangePicker = false
+                    },
+                ) { Text("确定", color = Accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRangePicker = false }) { Text("取消", color = TextMuted) }
+            },
+        ) {
+            DateRangePicker(
+                state = rangeState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(520.dp),
+                title = {
+                    Text(
+                        "选择日期区间",
+                        modifier = Modifier.padding(start = Dimens.gapMd, top = Dimens.gapMd),
+                        color = TextPrimary,
+                    )
+                },
+                showModeToggle = false,
+            )
         }
     }
 }
