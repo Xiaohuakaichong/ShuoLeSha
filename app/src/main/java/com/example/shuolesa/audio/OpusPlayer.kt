@@ -75,15 +75,22 @@ class OpusPlayer(private val context: Context) {
                 return false
             }
 
-            val isWav = filePath.endsWith(".wav", ignoreCase = true) || run {
-                if (file.length() >= 4) {
-                    val header = ByteArray(4)
-                    file.inputStream().use { it.read(header) }
-                    header.contentEquals("RIFF".toByteArray())
-                } else false
-            }
+            val isStandardMedia = filePath.endsWith(".wav", ignoreCase = true) ||
+                filePath.endsWith(".mp3", ignoreCase = true) ||
+                filePath.endsWith(".m4a", ignoreCase = true) ||
+                filePath.endsWith(".aac", ignoreCase = true) ||
+                filePath.endsWith(".flac", ignoreCase = true) ||
+                filePath.endsWith(".ogg", ignoreCase = true) ||
+                filePath.endsWith(".amr", ignoreCase = true) ||
+                run {
+                    if (file.length() >= 4) {
+                        val header = ByteArray(4)
+                        file.inputStream().use { it.read(header) }
+                        header.contentEquals("RIFF".toByteArray())
+                    } else false
+                }
 
-            if (isWav) {
+            if (isStandardMedia) {
                 isWavFormat = true
                 mediaPlayer?.release()
                 mediaPlayer = MediaPlayer().apply {

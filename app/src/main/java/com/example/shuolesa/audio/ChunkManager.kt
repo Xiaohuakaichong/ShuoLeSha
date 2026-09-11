@@ -17,6 +17,9 @@ class ChunkManager(
     private val context: Context,
     private val repository: AudioRepository,
     private val scope: CoroutineScope,
+    private val recordingMode: String = "lifelog",
+    private val lifelogBitrateKbps: Int = 24,
+    private val meetingFormat: String = "wav",
 ) {
 
     companion object {
@@ -28,6 +31,7 @@ class ChunkManager(
     private val sessionId = UUID.randomUUID().toString().take(8)
     private var chunkIndex = 0
     private var currentWavWriter: WavWriter? = null
+    private var currentAacWriter: AacWriter? = null
     private var currentFile: File? = null
     private var chunkStartTime = 0L
     private var frameCount = 0L
@@ -50,6 +54,7 @@ class ChunkManager(
      */
     fun onPcmFrame(buffer: ShortArray, readCount: Int) {
         currentWavWriter?.write(buffer, readCount)
+        currentAacWriter?.write(buffer, readCount)
         frameCount++
         val elapsedInChunk = frameCount * FRAME_DURATION_MS
 
@@ -62,7 +67,7 @@ class ChunkManager(
         val oldFile = currentFile
         val oldStartTime = chunkStartTime
         val durationMs = frameCount * FRAME_DURATION_MS
-        val bytesWritten = currentWavWriter?.finish() ?: 0L
+        val bytesWritten = currentWavWriter?.finish() ?: currentAacWriter?.finish() ?: 0L
 
         if (oldFile != null) {
             registerChunk(oldFile, chunkIndex - 1, oldStartTime, durationMs, bytesWritten)
@@ -74,7 +79,15 @@ class ChunkManager(
     private fun openNewChunk() {
         val audioDir = File(context.filesDir, "recordings").apply { mkdirs() }
         val timestamp = System.currentTimeMillis()
-        val fileName = "${timestamp}_${sessionId}_chunk${String.format("%03d", chunkIndex)}.wav"
+
+        val isAac = when {
+            recordingMode == "lifelog" -> true
+            recordingMode == "meeting" && meetingFormat == "aac_64k" -> true
+            else -> false
+        }
+
+        val ext = if (isAac) "aac" else "wav"
+        val fileName = "${timestamp}_${sessionId}_chunk${String.format("%03d", chunkIndex)}.$ext"
         val file = File(audioDir, fileName)
 
         currentFile = file
@@ -82,18 +95,26 @@ class ChunkManager(
         frameCount = 0
         chunkIndex++
 
-        currentWavWriter = WavWriter(file)
+        if (isAac) {
+            val bps = if (recordingMode == "meeting") 64000 else (lifelogBitrateKbps * 1000).coerceIn(16000, 64000)
+            currentAacWriter = AacWriter(file, sampleRate = 16000, bitRate = bps)
+            currentWavWriter = null
+        } else {
+            currentWavWriter = WavWriter(file)
+            currentAacWriter = null
+        }
     }
 
     fun finalizeSession() {
         val file = currentFile ?: return
         val durationMs = frameCount * FRAME_DURATION_MS
-        val bytesWritten = currentWavWriter?.finish() ?: 0L
+        val bytesWritten = currentWavWriter?.finish() ?: currentAacWriter?.finish() ?: 0L
 
         registerChunk(file, chunkIndex - 1, chunkStartTime, durationMs, bytesWritten)
 
         currentFile = null
         currentWavWriter = null
+        currentAacWriter = null
         totalRecordingStartTime = 0
     }
 

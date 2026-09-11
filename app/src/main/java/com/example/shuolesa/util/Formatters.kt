@@ -8,10 +8,36 @@ object Formatters {
 
     private val listDateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
     private val detailDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    private val dateOnlyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    private val timeOnlyFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     fun formatListDate(epochMs: Long): String = listDateFormat.format(Date(epochMs))
 
     fun formatDetailDate(epochMs: Long): String = detailDateFormat.format(Date(epochMs))
+
+    fun formatDateOnly(epochMs: Long): String = dateOnlyFormat.format(Date(epochMs))
+
+    fun formatTimeOnly(epochMs: Long): String = timeOnlyFormat.format(Date(epochMs))
+
+    fun getStartOfDay(epochMs: Long): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = epochMs
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    fun getEndOfDay(epochMs: Long): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = epochMs
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+        cal.set(java.util.Calendar.MINUTE, 59)
+        cal.set(java.util.Calendar.SECOND, 59)
+        cal.set(java.util.Calendar.MILLISECOND, 999)
+        return cal.timeInMillis
+    }
 
     /** Elapsed / seek time: mm:ss or h:mm:ss */
     fun formatElapsed(ms: Long): String {

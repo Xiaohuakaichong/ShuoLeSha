@@ -77,6 +77,12 @@ class AppPreferences(private val context: Context) {
         private val KEY_HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
         private val KEY_AUTO_RESUME_AFTER_CALL = booleanPreferencesKey("auto_resume_after_call")
         private val KEY_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("trigger_duration_sec")
+        private val KEY_RECORDING_MODE = stringPreferencesKey("recording_mode")
+        private val KEY_LIFELOG_BITRATE_KBPS = androidx.datastore.preferences.core.intPreferencesKey("lifelog_bitrate_kbps")
+        private val KEY_MEETING_FORMAT = stringPreferencesKey("meeting_format")
+        private val KEY_LAUNCH_STRATEGY = stringPreferencesKey("launch_strategy")
+        private val KEY_LIFELOG_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("lifelog_trigger_duration_sec")
+        private val KEY_MEETING_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("meeting_trigger_duration_sec")
     }
 
     val providerMode: Flow<String> = context.dataStore.data.map { it[KEY_PROVIDER_MODE] ?: ProviderPreset.STEPFUN.id }
@@ -92,6 +98,13 @@ class AppPreferences(private val context: Context) {
     val hapticEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_HAPTIC_ENABLED] ?: true }
     val autoResumeAfterCall: Flow<Boolean> = context.dataStore.data.map { it[KEY_AUTO_RESUME_AFTER_CALL] ?: false }
     val triggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_TRIGGER_DURATION] ?: 3 }
+
+    val recordingMode: Flow<String> = context.dataStore.data.map { it[KEY_RECORDING_MODE] ?: "lifelog" }
+    val lifelogBitrateKbps: Flow<Int> = context.dataStore.data.map { it[KEY_LIFELOG_BITRATE_KBPS] ?: 24 }
+    val meetingFormat: Flow<String> = context.dataStore.data.map { it[KEY_MEETING_FORMAT] ?: "wav" }
+    val launchStrategy: Flow<String> = context.dataStore.data.map { it[KEY_LAUNCH_STRATEGY] ?: "default" }
+    val lifelogTriggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_LIFELOG_TRIGGER_DURATION] ?: 2 }
+    val meetingTriggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_MEETING_TRIGGER_DURATION] ?: 4 }
 
     suspend fun setProviderMode(value: String) {
         context.dataStore.edit { it[KEY_PROVIDER_MODE] = value }
@@ -185,6 +198,66 @@ class AppPreferences(private val context: Context) {
     suspend fun isHapticEnabledSync(): Boolean {
         var result = true
         context.dataStore.edit { result = it[KEY_HAPTIC_ENABLED] ?: true }
+        return result
+    }
+
+    suspend fun setRecordingMode(mode: String) {
+        context.dataStore.edit { it[KEY_RECORDING_MODE] = mode }
+    }
+
+    suspend fun setLifelogBitrateKbps(bitrate: Int) {
+        context.dataStore.edit { it[KEY_LIFELOG_BITRATE_KBPS] = bitrate }
+    }
+
+    suspend fun setMeetingFormat(format: String) {
+        context.dataStore.edit { it[KEY_MEETING_FORMAT] = format }
+    }
+
+    suspend fun getRecordingModeSync(): String {
+        var result = "lifelog"
+        context.dataStore.edit { result = it[KEY_RECORDING_MODE] ?: "lifelog" }
+        return result
+    }
+
+    suspend fun getLifelogBitrateKbpsSync(): Int {
+        var result = 24
+        context.dataStore.edit { result = it[KEY_LIFELOG_BITRATE_KBPS] ?: 24 }
+        return result
+    }
+
+    suspend fun getMeetingFormatSync(): String {
+        var result = "wav"
+        context.dataStore.edit { result = it[KEY_MEETING_FORMAT] ?: "wav" }
+        return result
+    }
+
+    suspend fun setLaunchStrategy(strategy: String) {
+        context.dataStore.edit { it[KEY_LAUNCH_STRATEGY] = strategy }
+    }
+
+    suspend fun setLifelogTriggerDuration(seconds: Int) {
+        context.dataStore.edit { it[KEY_LIFELOG_TRIGGER_DURATION] = seconds }
+    }
+
+    suspend fun setMeetingTriggerDuration(seconds: Int) {
+        context.dataStore.edit { it[KEY_MEETING_TRIGGER_DURATION] = seconds }
+    }
+
+    suspend fun getLaunchStrategySync(): String {
+        var result = "default"
+        context.dataStore.edit { result = it[KEY_LAUNCH_STRATEGY] ?: "default" }
+        return result
+    }
+
+    suspend fun getLifelogTriggerDurationSync(): Int {
+        var result = 2
+        context.dataStore.edit { result = it[KEY_LIFELOG_TRIGGER_DURATION] ?: 2 }
+        return result
+    }
+
+    suspend fun getMeetingTriggerDurationSync(): Int {
+        var result = 4
+        context.dataStore.edit { result = it[KEY_MEETING_TRIGGER_DURATION] ?: 4 }
         return result
     }
 }

@@ -14,6 +14,19 @@ class AudioRepository(private val dao: AudioRecordDao) {
     fun observePendingCount(): Flow<Int> =
         dao.countByStatus(AudioRecordEntity.STATUS_PENDING)
 
+    fun observeRecordById(id: Long): Flow<AudioRecordEntity?> = dao.observeById(id)
+
+    suspend fun getRecordById(id: Long): AudioRecordEntity? = dao.getById(id)
+
+    suspend fun updateActionItems(id: Long, actionItemsJson: String) =
+        dao.updateActionItems(id, actionItemsJson)
+
+    suspend fun getRecordsBetween(startTime: Long, endTime: Long): List<AudioRecordEntity> =
+        dao.getRecordsBetween(startTime, endTime)
+
+    suspend fun getRecordBySessionId(sessionId: String): AudioRecordEntity? =
+        dao.getBySessionId(sessionId)
+
     suspend fun insertRecord(record: AudioRecordEntity): Long = dao.insert(record)
 
     suspend fun getPendingUploads(maxRetries: Int = 5): List<AudioRecordEntity> =

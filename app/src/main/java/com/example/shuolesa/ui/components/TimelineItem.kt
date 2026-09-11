@@ -40,6 +40,7 @@ import com.example.shuolesa.theme.CardElevated
 import com.example.shuolesa.theme.Dimens
 import com.example.shuolesa.theme.ElectricBlue
 import com.example.shuolesa.theme.MintCyan
+import com.example.shuolesa.theme.NeonGreen
 import com.example.shuolesa.theme.SurfaceBorder
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
@@ -62,18 +63,7 @@ fun TimelineItem(
 
     // Parse action items & tags from JSON if available
     val actionItems = remember(record.actionItems) {
-        val list = mutableListOf<String>()
-        if (!record.actionItems.isNullOrBlank()) {
-            try {
-                val json = JSONArray(record.actionItems)
-                for (i in 0 until json.length()) {
-                    list.add(json.getString(i))
-                }
-            } catch (_: Exception) {
-                record.actionItems.lines().filter { it.isNotBlank() }.forEach { list.add(it) }
-            }
-        }
-        list
+        com.example.shuolesa.data.model.ActionItemModel.fromJsonString(record.actionItems)
     }
 
     val tags = remember(record.tags) {
@@ -91,9 +81,11 @@ fun TimelineItem(
         list
     }
 
+    val isLifeLog = remember(record.tags) { record.tags.orEmpty().contains("LifeLog") }
+
     TerminalCard(
         modifier = modifier.clickable(onClick = onClick),
-        borderColor = SurfaceBorder,
+        borderColor = if (isLifeLog) NeonGreen.copy(alpha = 0.45f) else SurfaceBorder,
     ) {
         // Top Header: Time, Duration pill, Status Badge
         Row(
@@ -111,18 +103,35 @@ fun TimelineItem(
                     color = TextPrimary,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(CardElevated)
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = "⏱️ $durationStr",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                    )
+                if (isLifeLog) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(NeonGreen.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "🌿 全天复盘",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonGreen,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(CardElevated)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "⏱️ $durationStr",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                        )
+                    }
                 }
             }
             StatusBadge(status = record.status)
@@ -187,15 +196,17 @@ fun TimelineItem(
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = MintCyan,
+                            tint = if (item.isDone) TextMuted else MintCyan,
                             modifier = Modifier
                                 .size(15.dp)
                                 .padding(top = 2.dp),
                         )
                         Text(
-                            text = item,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextPrimary,
+                            text = item.text,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                textDecoration = if (item.isDone) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                            ),
+                            color = if (item.isDone) TextMuted else TextPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )

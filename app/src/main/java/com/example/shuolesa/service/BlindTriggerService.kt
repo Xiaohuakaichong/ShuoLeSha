@@ -35,13 +35,20 @@ class BlindTriggerService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var hapticFeedback: HapticFeedback? = null
     private var prefs: AppPreferences? = null
-    private var triggerDurationMs = 3000L
+    private var lifelogDurationMs = 2000L
+    private var meetingDurationMs = 4000L
 
     // Key state tracking
     private var volumeUpPressed = false
     private var volumeDownPressed = false
     private var bothPressedActive = false
-    private var triggerRunnable: Runnable? = null
+
+    private var reachedLifelog = false
+    private var reachedMeeting = false
+
+    private var lifelogRunnable: Runnable? = null
+    private var meetingRunnable: Runnable? = null
+    private var stopRunnable: Runnable? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -51,9 +58,15 @@ class BlindTriggerService : AccessibilityService() {
         Log.d(TAG, "BlindTriggerService connected")
 
         scope.launch {
-            prefs?.triggerDuration?.collect { seconds ->
-                triggerDurationMs = seconds * 1000L
-                Log.d(TAG, "Trigger duration updated to: $triggerDurationMs ms")
+            prefs?.lifelogTriggerDuration?.collect { seconds ->
+                lifelogDurationMs = seconds * 1000L
+                Log.d(TAG, "LifeLog trigger duration: $lifelogDurationMs ms")
+            }
+        }
+        scope.launch {
+            prefs?.meetingTriggerDuration?.collect { seconds ->
+                meetingDurationMs = seconds * 1000L
+                Log.d(TAG, "Meeting trigger duration: $meetingDurationMs ms")
             }
         }
     }
@@ -82,18 +95,54 @@ class BlindTriggerService : AccessibilityService() {
                     KeyEvent.KEYCODE_VOLUME_DOWN -> volumeDownPressed = true
                 }
 
-                // Both pressed — start countdown
+                // Both pressed — start tactile ladder
                 if (volumeUpPressed && volumeDownPressed) {
                     bothPressedActive = true
-                    if (triggerRunnable == null) {
-                        val runnable = Runnable {
-                            onTriggerActivated()
-                            triggerRunnable = null
+                    val isRecording = AudioCaptureService.isRunning
+
+                    if (isRecording) {
+                        if (stopRunnable == null) {
+                            val r = Runnable {
+                                onStopTriggered()
+                                stopRunnable = null
+                            }
+                            stopRunnable = r
+                            handler.postDelayed(r, 1200L)
                         }
-                        triggerRunnable = runnable
-                        handler.postDelayed(runnable, triggerDurationMs)
+                    } else {
+                        if (lifelogRunnable == null && meetingRunnable == null) {
+                            reachedLifelog = false
+                            reachedMeeting = false
+
+                            // Stage 1: LifeLog
+                            val r1 = Runnable {
+                                reachedLifelog = true
+                                scope.launch {
+                                    if (prefs?.hapticEnabled?.first() ?: true) {
+                                        hapticFeedback?.singlePulse()
+                                    }
+                                }
+                                Log.d(TAG, "Ladder Stage 1 reached: LifeLog (release now to start LifeLog, or keep holding for Meeting)")
+                            }
+                            lifelogRunnable = r1
+                            handler.postDelayed(r1, lifelogDurationMs)
+
+                            // Stage 2: Meeting
+                            val r2 = Runnable {
+                                reachedMeeting = true
+                                scope.launch {
+                                    if (prefs?.hapticEnabled?.first() ?: true) {
+                                        hapticFeedback?.doublePulse()
+                                    }
+                                }
+                                Log.d(TAG, "Ladder Stage 2 reached: Launching Meeting recording")
+                                onStartTriggered("meeting")
+                            }
+                            meetingRunnable = r2
+                            handler.postDelayed(r2, meetingDurationMs)
+                        }
                     }
-                    return true // Consume when both are pressed
+                    return true
                 }
 
                 return false // Pass through single press so volume controls work
@@ -111,53 +160,68 @@ class BlindTriggerService : AccessibilityService() {
                     bothPressedActive = false
                 }
 
-                // If either key released before trigger duration, cancel countdown
                 if (!volumeUpPressed || !volumeDownPressed) {
-                    triggerRunnable?.let { handler.removeCallbacks(it) }
-                    triggerRunnable = null
+                    stopRunnable?.let { handler.removeCallbacks(it) }
+                    stopRunnable = null
+
+                    lifelogRunnable?.let { handler.removeCallbacks(it) }
+                    lifelogRunnable = null
+
+                    meetingRunnable?.let { handler.removeCallbacks(it) }
+                    meetingRunnable = null
+
+                    val isRecording = AudioCaptureService.isRunning
+                    if (!isRecording) {
+                        if (reachedMeeting) {
+                            Log.d(TAG, "Meeting mode already triggered at stage 2")
+                        } else if (reachedLifelog) {
+                            Log.d(TAG, "Released after Stage 1: Launching LifeLog recording")
+                            onStartTriggered("lifelog")
+                        }
+                    }
+
+                    reachedLifelog = false
+                    reachedMeeting = false
                 }
 
-                return wasBothPressed // Only consume if we were in simultaneous press mode
+                return wasBothPressed
             }
         }
 
         return false
     }
 
-    private fun onTriggerActivated() {
+    private fun onStartTriggered(mode: String) {
+        scope.launch {
+            Log.d(TAG, "Trigger: START recording in mode: $mode")
+            val intent = Intent(this@BlindTriggerService, AudioCaptureService::class.java).apply {
+                action = AudioCaptureService.ACTION_START
+                putExtra(AudioCaptureService.EXTRA_RECORDING_MODE, mode)
+            }
+            startForegroundService(intent)
+        }
+    }
+
+    private fun onStopTriggered() {
         scope.launch {
             val hapticEnabled = prefs?.hapticEnabled?.first() ?: true
-            val isRecording = AudioCaptureService.isRunning
+            Log.d(TAG, "Trigger: STOP recording")
+            val intent = Intent(this@BlindTriggerService, AudioCaptureService::class.java).apply {
+                action = AudioCaptureService.ACTION_STOP
+            }
+            startService(intent)
 
-            if (!isRecording) {
-                // Start recording
-                Log.d(TAG, "Trigger: START recording")
-                val intent = Intent(this@BlindTriggerService, AudioCaptureService::class.java).apply {
-                    action = AudioCaptureService.ACTION_START
-                }
-                startForegroundService(intent)
-
-                if (hapticEnabled) {
-                    hapticFeedback?.singlePulse()
-                }
-            } else {
-                // Stop recording
-                Log.d(TAG, "Trigger: STOP recording")
-                val intent = Intent(this@BlindTriggerService, AudioCaptureService::class.java).apply {
-                    action = AudioCaptureService.ACTION_STOP
-                }
-                startService(intent)
-
-                if (hapticEnabled) {
-                    hapticFeedback?.doublePulse()
-                }
+            if (hapticEnabled) {
+                hapticFeedback?.doublePulse()
             }
         }
     }
 
     override fun onDestroy() {
         isServiceActive = false
-        triggerRunnable?.let { handler.removeCallbacks(it) }
+        stopRunnable?.let { handler.removeCallbacks(it) }
+        lifelogRunnable?.let { handler.removeCallbacks(it) }
+        meetingRunnable?.let { handler.removeCallbacks(it) }
         scope.cancel()
         super.onDestroy()
     }

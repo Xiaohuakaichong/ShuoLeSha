@@ -89,9 +89,10 @@ class UploadWorker(
             val notes = llmResult.getOrNull()
             val title = notes?.title ?: "随手语音"
             val summary = notes?.summary ?: transcription
-            val actionItemsJson = notes?.actionItems?.let { org.json.JSONArray(it).toString() }
+            val actionItemsJson = notes?.actionItems?.let { com.example.shuolesa.data.model.ActionItemModel.toJsonString(it) }
             val tagsJson = notes?.tags?.let { org.json.JSONArray(it).toString() }
             val rawJson = notes?.rawJson ?: transcription
+            val finalTranscription = notes?.structuredTranscript?.takeIf { it.isNotBlank() } ?: transcription
 
             repository.markProcessedStructured(
                 id = record.id,
@@ -99,7 +100,7 @@ class UploadWorker(
                 summary = summary,
                 actionItems = actionItemsJson,
                 tags = tagsJson,
-                transcription = transcription,
+                transcription = finalTranscription,
                 agentResult = rawJson,
             )
 

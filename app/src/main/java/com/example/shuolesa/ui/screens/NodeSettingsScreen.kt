@@ -17,10 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.example.shuolesa.theme.NeonGreen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
@@ -101,8 +103,14 @@ fun NodeSettingsScreen(
     val keepLocalAudio by prefs.keepLocalAudio.collectAsState(initial = true)
 
     val hapticEnabled by prefs.hapticEnabled.collectAsState(initial = true)
-    val triggerDuration by prefs.triggerDuration.collectAsState(initial = 3)
     val autoResumeAfterCall by prefs.autoResumeAfterCall.collectAsState(initial = false)
+
+    val recordingMode by prefs.recordingMode.collectAsState(initial = "lifelog")
+    val lifelogBitrateKbps by prefs.lifelogBitrateKbps.collectAsState(initial = 24)
+    val meetingFormat by prefs.meetingFormat.collectAsState(initial = "wav")
+    val launchStrategy by prefs.launchStrategy.collectAsState(initial = "default")
+    val lifelogTriggerDuration by prefs.lifelogTriggerDuration.collectAsState(initial = 2)
+    val meetingTriggerDuration by prefs.meetingTriggerDuration.collectAsState(initial = 4)
 
     var tokenVisible by remember { mutableStateOf(false) }
     var promptExpanded by remember { mutableStateOf(false) }
@@ -345,10 +353,351 @@ fun NodeSettingsScreen(
 
         Spacer(modifier = Modifier.height(Dimens.gapXl))
 
+        // Audio Recording Quality & Mode Tiering
+        SectionLabel("音频录制与品质分级")
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
+
+        TerminalCard {
+            Text(
+                text = "录制启动策略 (一级选项)",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "控制点击录音按钮时的交互流程",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val isDefault = launchStrategy == "default"
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isDefault) MintCyan.copy(alpha = 0.15f) else CardElevated)
+                        .border(1.dp, if (isDefault) MintCyan else SurfaceBorder, RoundedCornerShape(8.dp))
+                        .clickable { scope.launch { prefs.setLaunchStrategy("default") } }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "⚡ 固定默认模式",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDefault) MintCyan else TextPrimary,
+                        )
+                        Text(
+                            text = "点击直接开启固定模式",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDefault) MintCyan.copy(alpha = 0.8f) else TextMuted,
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
+
+                val isPrompt = launchStrategy == "prompt"
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isPrompt) NeonGreen.copy(alpha = 0.15f) else CardElevated)
+                        .border(1.dp, if (isPrompt) NeonGreen else SurfaceBorder, RoundedCornerShape(8.dp))
+                        .clickable { scope.launch { prefs.setLaunchStrategy("prompt") } }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "🎯 每次单独选择",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isPrompt) NeonGreen else TextPrimary,
+                        )
+                        Text(
+                            text = "点击弹窗自选格式",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isPrompt) NeonGreen.copy(alpha = 0.8f) else TextMuted,
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (launchStrategy == "default") {
+                Text(
+                    text = "固定的默认录音模式",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "随身闲聊建议使用 LifeLog 极小文件，正式会议建议使用高保真",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    val isLifeLog = recordingMode == "lifelog"
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isLifeLog) NeonGreen.copy(alpha = 0.15f) else CardElevated)
+                            .border(1.dp, if (isLifeLog) NeonGreen else SurfaceBorder, RoundedCornerShape(8.dp))
+                            .clickable { scope.launch { prefs.setRecordingMode("lifelog") } }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "🌿 LifeLog 模式",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isLifeLog) NeonGreen else TextPrimary,
+                            )
+                            Text(
+                                text = "小文件 · 超省电省空间",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isLifeLog) NeonGreen.copy(alpha = 0.8f) else TextMuted,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+
+                    val isMeeting = recordingMode == "meeting"
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isMeeting) MintCyan.copy(alpha = 0.15f) else CardElevated)
+                            .border(1.dp, if (isMeeting) MintCyan else SurfaceBorder, RoundedCornerShape(8.dp))
+                            .clickable { scope.launch { prefs.setRecordingMode("meeting") } }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "💼 会议模式",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isMeeting) MintCyan else TextPrimary,
+                            )
+                            Text(
+                                text = "大文件 · 清晰高保真",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isMeeting) MintCyan.copy(alpha = 0.8f) else TextMuted,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (recordingMode == "lifelog") {
+                    Text(
+                        text = "LifeLog 压缩码率 (AAC 硬件编码)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(
+                            Triple(16, "16 kbps", "极省 ~7MB/h"),
+                            Triple(24, "24 kbps", "标准 ~10MB/h"),
+                            Triple(32, "32 kbps", "清晰 ~14MB/h"),
+                        ).forEach { (kbps, label, est) ->
+                            val isSel = lifelogBitrateKbps == kbps
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSel) NeonGreen.copy(alpha = 0.15f) else CardElevated)
+                                    .border(1.dp, if (isSel) NeonGreen else SurfaceBorder, RoundedCornerShape(6.dp))
+                                    .clickable { scope.launch { prefs.setLifelogBitrateKbps(kbps) } }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSel) NeonGreen else TextPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = est,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSel) NeonGreen.copy(alpha = 0.75f) else TextMuted,
+                                        fontSize = 9.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "会议录音格式与音质",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(
+                            Triple("wav", "无损 WAV", "16kHz 16bit · ~115MB/h"),
+                            Triple("aac_64k", "高清 AAC", "64kbps · ~28MB/h"),
+                        ).forEach { (fmt, label, est) ->
+                            val isSel = meetingFormat == fmt
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSel) MintCyan.copy(alpha = 0.15f) else CardElevated)
+                                    .border(1.dp, if (isSel) MintCyan else SurfaceBorder, RoundedCornerShape(6.dp))
+                                    .clickable { scope.launch { prefs.setMeetingFormat(fmt) } }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSel) MintCyan else TextPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = est,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSel) MintCyan.copy(alpha = 0.75f) else TextMuted,
+                                        fontSize = 9.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // When in Prompt mode, allow configuring both format parameters
+                Text(
+                    text = "🌿 LifeLog 格式码率 (AAC 硬件编码)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NeonGreen,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        Triple(16, "16 kbps", "极省 ~7MB/h"),
+                        Triple(24, "24 kbps", "标准 ~10MB/h"),
+                        Triple(32, "32 kbps", "清晰 ~14MB/h"),
+                    ).forEach { (kbps, label, est) ->
+                        val isSel = lifelogBitrateKbps == kbps
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSel) NeonGreen.copy(alpha = 0.15f) else CardElevated)
+                                .border(1.dp, if (isSel) NeonGreen else SurfaceBorder, RoundedCornerShape(6.dp))
+                                .clickable { scope.launch { prefs.setLifelogBitrateKbps(kbps) } }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSel) NeonGreen else TextPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = est,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSel) NeonGreen.copy(alpha = 0.75f) else TextMuted,
+                                    fontSize = 9.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = "💼 会议模式格式与品质",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MintCyan,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        Triple("wav", "无损 WAV", "16kHz 16bit · ~115MB/h"),
+                        Triple("aac_64k", "高清 AAC", "64kbps · ~28MB/h"),
+                    ).forEach { (fmt, label, est) ->
+                        val isSel = meetingFormat == fmt
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSel) MintCyan.copy(alpha = 0.15f) else CardElevated)
+                                .border(1.dp, if (isSel) MintCyan else SurfaceBorder, RoundedCornerShape(6.dp))
+                                .clickable { scope.launch { prefs.setMeetingFormat(fmt) } }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSel) MintCyan else TextPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = est,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSel) MintCyan.copy(alpha = 0.75f) else TextMuted,
+                                    fontSize = 9.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Dimens.gapXl))
+
         // Storage & Audio Retention
         SettingsRow(
             label = "保留本地录音原件",
-            subtitle = "识别完成后仍保留 Opus 音频用于本地回放",
+            subtitle = "识别完成后仍保留音频用于本地回放",
         ) {
             Switch(
                 checked = keepLocalAudio,
@@ -402,33 +751,161 @@ fun NodeSettingsScreen(
 
         Spacer(modifier = Modifier.height(Dimens.gapMd))
 
-        // Trigger Duration
-        var tempDuration by remember(triggerDuration) { mutableFloatStateOf(triggerDuration.toFloat()) }
+        // Dual-Stage Blind Trigger Durations
+        var tempLifelogDuration by remember(lifelogTriggerDuration) { mutableFloatStateOf(lifelogTriggerDuration.toFloat()) }
+        var tempMeetingDuration by remember(meetingTriggerDuration) { mutableFloatStateOf(meetingTriggerDuration.toFloat()) }
+
         TerminalCard {
+            Text(
+                text = "无障碍双阶盲操时长",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "息屏或后台下，同时按住音量 +/- 键不同时长触发不同音质",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Tactile Ladder Guide
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MintCyan.copy(alpha = 0.08f))
+                    .border(1.dp, MintCyan.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                    .padding(10.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "🪜 振动阶梯手感说明：",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MintCyan,
+                    )
+                    Text(
+                        text = "1. 按住达 ${tempLifelogDuration.toInt()} 秒：震动脉冲 1 次；此时松开按键，立即开启 LifeLog 格式录制。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                    )
+                    Text(
+                        text = "2. 持续按住达 ${tempMeetingDuration.toInt()} 秒：双连震动脉冲 2 次，自动开启高保真会议录制。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                    )
+                    Text(
+                        text = "3. 录音中再次长按 (~1.2 秒)：震动停止录制。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Stage 1 Slider: LifeLog
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
-                    Text(text = "盲操触发时长", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Text(text = "同时按住音量 +/- 键所需时长", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    Text(
+                        text = "阶梯 1 · LifeLog 随身模式",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = NeonGreen,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "轻按触发，震动 1 次后松手",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                    )
                 }
                 Text(
-                    text = "${tempDuration.toInt()} 秒",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = "${tempLifelogDuration.toInt()} 秒",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = NeonGreen,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Slider(
+                value = tempLifelogDuration,
+                onValueChange = {
+                    tempLifelogDuration = it
+                    if (tempMeetingDuration <= it) {
+                        tempMeetingDuration = (it + 1).coerceAtMost(7f)
+                    }
+                },
+                onValueChangeFinished = {
+                    val lifeSec = tempLifelogDuration.toInt()
+                    val meetSec = tempMeetingDuration.toInt()
+                    scope.launch {
+                        prefs.setLifelogTriggerDuration(lifeSec)
+                        if (meetSec <= lifeSec) {
+                            prefs.setMeetingTriggerDuration(lifeSec + 1)
+                        }
+                    }
+                },
+                valueRange = 1f..4f,
+                steps = 2,
+                colors = SliderDefaults.colors(
+                    thumbColor = NeonGreen,
+                    activeTrackColor = NeonGreen,
+                    inactiveTrackColor = CardElevated,
+                    activeTickColor = BgDark,
+                    inactiveTickColor = TextMuted,
+                ),
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Stage 2 Slider: Meeting
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "阶梯 2 · 会议高保真模式",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MintCyan,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "深按不放，震动 2 次直接开启",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                    )
+                }
+                Text(
+                    text = "${tempMeetingDuration.toInt()} 秒",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MintCyan,
                     fontWeight = FontWeight.Bold,
                 )
             }
-            Spacer(modifier = Modifier.height(Dimens.gapSm))
             Slider(
-                value = tempDuration,
-                onValueChange = { tempDuration = it },
-                onValueChangeFinished = {
-                    scope.launch { prefs.setTriggerDuration(tempDuration.toInt()) }
+                value = tempMeetingDuration,
+                onValueChange = {
+                    if (it > tempLifelogDuration) {
+                        tempMeetingDuration = it
+                    }
                 },
-                valueRange = 1f..5f,
+                onValueChangeFinished = {
+                    val meetSec = tempMeetingDuration.toInt()
+                    scope.launch {
+                        prefs.setMeetingTriggerDuration(meetSec)
+                    }
+                },
+                valueRange = 3f..7f,
                 steps = 3,
                 colors = SliderDefaults.colors(
                     thumbColor = MintCyan,
@@ -491,6 +968,52 @@ fun NodeSettingsScreen(
                     Text("开启无限制白名单", style = MaterialTheme.typography.labelLarge, color = MintCyan)
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(Dimens.gapMd))
+
+        // About & Version
+        TerminalCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "说了啥 · ShuoLeSha",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(Dimens.gapXs))
+                    Text(
+                        text = "随身 AI 录音卡片 · 极客生产力工具",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MintCyan.copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        text = "v2.1",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MintCyan,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+            Text(
+                text = "✨ 核心特性：\n• 🌿 LifeLog 极小文件 / 💼 会议高保真音频分级\n• 4 栏全功能工作台（记忆流 · 生活手记 · 待办 · 设置）\n• 无障碍双阶触觉长按盲操（单脉冲/双脉冲自选手感）\n• 录制启动策略自由切换（固定默认 / 每次单独选择）\n• 全局交互式待办勾选闭环与 Markdown 一键导出",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                lineHeight = 20.sp,
+            )
         }
 
         Spacer(modifier = Modifier.height(Dimens.pageBottomNavClearance))

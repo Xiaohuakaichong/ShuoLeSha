@@ -9,6 +9,7 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import com.example.shuolesa.data.model.ActionItemModel
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -18,8 +19,9 @@ import java.util.concurrent.TimeUnit
 data class StructuredNotes(
     val title: String,
     val summary: String,
-    val actionItems: List<String>,
+    val actionItems: List<ActionItemModel>,
     val tags: List<String>,
+    val structuredTranscript: String? = null,
     val rawJson: String,
 )
 
@@ -118,7 +120,11 @@ class ApiService {
                 audioFile.name.endsWith(".wav", ignoreCase = true) -> "audio/wav".toMediaType()
                 audioFile.name.endsWith(".mp3", ignoreCase = true) -> "audio/mpeg".toMediaType()
                 audioFile.name.endsWith(".m4a", ignoreCase = true) -> "audio/mp4".toMediaType()
+                audioFile.name.endsWith(".aac", ignoreCase = true) -> "audio/aac".toMediaType()
+                audioFile.name.endsWith(".flac", ignoreCase = true) -> "audio/flac".toMediaType()
+                audioFile.name.endsWith(".ogg", ignoreCase = true) -> "audio/ogg".toMediaType()
                 audioFile.name.endsWith(".opus", ignoreCase = true) -> "audio/opus".toMediaType()
+                audioFile.name.endsWith(".amr", ignoreCase = true) -> "audio/amr".toMediaType()
                 else -> "audio/wav".toMediaType()
             }
 
@@ -250,6 +256,161 @@ $transcription
         }
     }
 
+    /**
+     * 基于录音文稿进行智能问答追问 (Ask AI)
+     */
+    fun askQuestionAboutNote(
+        baseUrl: String,
+        apiKey: String,
+        llmModel: String,
+        transcription: String,
+        question: String,
+    ): Result<String> {
+        return try {
+            val url = "${normalizeBaseUrl(baseUrl)}/chat/completions"
+            val systemPrompt = """你是一个智能随身语音笔记助手。
+请基于用户提供的录音转录文稿，针对用户提出的问题进行客观、精准、简明的回答。
+若录音内容中并未提及该问题相关的信息，请如实告知“录音中未明确提及”。回答直接切入要害，语言精练。"""
+
+            val userContent = """【录音全文稿】：
+$transcription
+
+【用户追问】：
+$question"""
+
+            val messages = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", userContent)
+                })
+            }
+
+            val requestJson = JSONObject().apply {
+                put("model", llmModel.ifBlank { "step-router-v1" })
+                put("messages", messages)
+                put("temperature", 0.3)
+            }.toString()
+
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post(requestJson.toRequestBody("application/json".toMediaType()))
+
+            if (apiKey.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $apiKey")
+            }
+
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val respStr = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val root = JSONObject(respStr)
+                    val choices = root.optJSONArray("choices")
+                    val message = choices?.optJSONObject(0)?.optJSONObject("message")
+                    val answer = message?.optString("content", "") ?: ""
+                    Result.success(answer.trim())
+                } else {
+                    Log.e(TAG, "Ask question failed: $respStr")
+                    Result.failure(Exception("AI 响应失败 (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ask question error", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 全天 LifeLog 跨录音综合复盘提炼
+     */
+    fun generateLifeLogSummary(
+        baseUrl: String,
+        apiKey: String,
+        llmModel: String,
+        dateStr: String,
+        recordsContext: String,
+    ): Result<com.example.shuolesa.data.model.LifeLogResult> {
+        return try {
+            val url = "${normalizeBaseUrl(baseUrl)}/chat/completions"
+            val systemPrompt = """你是一位细腻、温暖且极富洞察力的私人生活观察家与每日复盘首席秘书。
+用户在这一天中记录了多段语音，包括工作会议、与朋友的闲聊、琐碎自语和突发灵感。
+请综合全天所有的录音内容，挖掘日常生活中的温情细节、人际互动趣事与重要行动，生成一份排版生动、富有记忆温度的【全天 LifeLog 生活手记】。
+
+必须输出严格合法的纯 JSON 格式：
+{
+  "title": "$dateStr 生活手记 · <一句有画面感、有诗意或幽默的今日主题>",
+  "summary": "全天生活与心境综述（100-250字，以第二人称‘你’或温暖的第一人称叙事，将今天的工作、交流与心境娓娓道来）",
+  "timeline_highlights": [
+    {"time": "时段（如 上午/午后/傍晚）", "title": "节点标题", "content": "发生了什么或说了什么精彩点"}
+  ],
+  "social_and_chats": "朋友与人际闲聊温情亮点（特别提炼与朋友聊到了什么趣事、彼此的吐槽或共鸣、关于生活/爱好/八卦的交流，若无闲聊则写'今天主要是专注自我与工作'）",
+  "work_and_decisions": "工作推进与核心决议（会议达成的结果、讨论的关键点、推动的事务，若无工作内容则写'今天没有工作会议羁绊，纯粹属于生活'）",
+  "unified_action_items": [
+    {"text": "全天聚合待办1（清晰明确）", "done": false}
+  ],
+  "daily_quote": "基于今天一切经历提炼的今日心境金句/人生感悟"
+}
+注意：
+1. 仔细提取散落在各段录音中的所有行动待办，合并归纳到 unified_action_items；
+2. 敏锐捕捉人际闲聊中的温情与幽默，让闲聊像电影切片一样被永久记录；
+3. 必须输出且仅输出合法标准 JSON，不要带有 markdown 标记或多余文字。"""
+
+            val userContent = """【日期】：$dateStr
+【今日录音记录与文稿汇总】：
+$recordsContext
+
+请生成今日的 LifeLog 全天复盘与聚合待办 JSON。"""
+
+            val messages = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", userContent)
+                })
+            }
+
+            val requestJson = JSONObject().apply {
+                put("model", llmModel.ifBlank { "step-router-v1" })
+                put("messages", messages)
+                put("temperature", 0.3)
+                if (baseUrl.contains("stepfun", ignoreCase = true) || baseUrl.contains("siliconflow", ignoreCase = true) || baseUrl.contains("openai", ignoreCase = true)) {
+                    put("response_format", JSONObject().put("type", "json_object"))
+                }
+            }.toString()
+
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post(requestJson.toRequestBody("application/json".toMediaType()))
+
+            if (apiKey.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $apiKey")
+            }
+
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val respStr = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val root = JSONObject(respStr)
+                    val choices = root.optJSONArray("choices")
+                    val message = choices?.optJSONObject(0)?.optJSONObject("message")
+                    val content = message?.optString("content", "") ?: ""
+                    val parsed = com.example.shuolesa.data.model.LifeLogResult.fromJson(content)
+                    Result.success(parsed)
+                } else {
+                    Log.e(TAG, "LifeLog generation failed: $respStr")
+                    Result.failure(Exception("LifeLog 提炼失败 (${response.code}): $respStr"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "LifeLog generation exception", e)
+            Result.failure(e)
+        }
+    }
+
     private fun parseStructuredJson(rawContent: String): StructuredNotes {
         val clean = rawContent.trim()
         val fenceRegex = Regex("""```(?:json|JSON)?\s*([\s\S]*?)\s*```""")
@@ -273,15 +434,29 @@ $transcription
                 json.optString("content", jsonCandidate)
             }
 
-            val actionItems = mutableListOf<String>()
+            val actionItems = mutableListOf<ActionItemModel>()
             val actionsArray = json.optJSONArray("action_items")
                 ?: json.optJSONArray("actionItems")
                 ?: json.optJSONArray("todos")
                 ?: json.optJSONArray("actions")
             if (actionsArray != null) {
                 for (i in 0 until actionsArray.length()) {
-                    val item = actionsArray.optString(i, "").trim()
-                    if (item.isNotEmpty()) actionItems.add(item)
+                    val item = actionsArray.opt(i)
+                    when (item) {
+                        is JSONObject -> {
+                            val text = item.optString("text", item.optString("task", item.optString("title", ""))).trim()
+                            val done = item.optBoolean("done", item.optBoolean("isDone", false))
+                            if (text.isNotEmpty()) {
+                                actionItems.add(ActionItemModel(text = text, isDone = done))
+                            }
+                        }
+                        is String -> {
+                            val text = item.trim()
+                            if (text.isNotEmpty()) {
+                                actionItems.add(ActionItemModel(text = text, isDone = false))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -295,11 +470,14 @@ $transcription
                 }
             }
 
+            val structuredTranscript = json.optString("structured_transcript", "").ifBlank { null }
+
             StructuredNotes(
                 title = title,
                 summary = summary,
                 actionItems = actionItems,
                 tags = tags,
+                structuredTranscript = structuredTranscript,
                 rawJson = clean,
             )
         } catch (_: Exception) {
@@ -309,6 +487,7 @@ $transcription
                 summary = rawContent,
                 actionItems = emptyList(),
                 tags = listOf("便签"),
+                structuredTranscript = null,
                 rawJson = rawContent,
             )
         }

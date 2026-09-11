@@ -78,4 +78,19 @@ interface AudioRecordDao {
 
     @Query("SELECT COUNT(*) FROM audio_records WHERE status = :status")
     fun countByStatus(status: String): Flow<Int>
+
+    @Query("SELECT * FROM audio_records WHERE id = :id LIMIT 1")
+    fun observeById(id: Long): Flow<AudioRecordEntity?>
+
+    @Query("SELECT * FROM audio_records WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): AudioRecordEntity?
+
+    @Query("UPDATE audio_records SET actionItems = :actionItems WHERE id = :id")
+    suspend fun updateActionItems(id: Long, actionItems: String?)
+
+    @Query("SELECT * FROM audio_records WHERE createdAt >= :startTime AND createdAt <= :endTime ORDER BY createdAt ASC")
+    suspend fun getRecordsBetween(startTime: Long, endTime: Long): List<AudioRecordEntity>
+
+    @Query("SELECT * FROM audio_records WHERE sessionId = :sessionId LIMIT 1")
+    suspend fun getBySessionId(sessionId: String): AudioRecordEntity?
 }

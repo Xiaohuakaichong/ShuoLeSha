@@ -41,6 +41,7 @@ class AudioCaptureService : Service() {
         private const val TAG = "AudioCaptureService"
         const val ACTION_START = "com.example.shuolesa.ACTION_START_RECORDING"
         const val ACTION_STOP = "com.example.shuolesa.ACTION_STOP_RECORDING"
+        const val EXTRA_RECORDING_MODE = "com.example.shuolesa.EXTRA_RECORDING_MODE"
 
         @Volatile
         var isRunning = false
@@ -73,13 +74,16 @@ class AudioCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startRecording()
+            ACTION_START -> {
+                val mode = intent.getStringExtra(EXTRA_RECORDING_MODE)
+                startRecording(mode)
+            }
             ACTION_STOP, NotificationHelper.ACTION_FORCE_STOP -> stopRecording()
         }
         return START_STICKY
     }
 
-    private fun startRecording() {
+    private fun startRecording(overrideMode: String? = null) {
         if (isRunning) return
 
         // Check storage
@@ -131,7 +135,19 @@ class AudioCaptureService : Service() {
 
         val db = AppDatabase.getInstance(this)
         val repository = AudioRepository(db.audioRecordDao())
-        val chunkMgr = ChunkManager(this, repository, serviceScope)
+        val prefs = AppPreferences(this)
+        val mode = overrideMode ?: kotlinx.coroutines.runBlocking { prefs.getRecordingModeSync() }
+        val bitrate = kotlinx.coroutines.runBlocking { prefs.getLifelogBitrateKbpsSync() }
+        val meetingFmt = kotlinx.coroutines.runBlocking { prefs.getMeetingFormatSync() }
+
+        val chunkMgr = ChunkManager(
+            context = this,
+            repository = repository,
+            scope = serviceScope,
+            recordingMode = mode,
+            lifelogBitrateKbps = bitrate,
+            meetingFormat = meetingFmt,
+        )
 
         audioRecorder = recorder
         chunkManager = chunkMgr

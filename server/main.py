@@ -193,55 +193,76 @@ async def process_voice_one_stop(
     if not transcription:
         raise HTTPException(status_code=400, detail="Audio transcription returned empty text")
 
-        # Step 2: LLM Structuring
-        system_prompt = """你是一个随身语音灵感与会议纪要秘书。
-请根据用户的录音文字稿，提取并输出结构化的纯 JSON 字符串，格式如下：
+    # Step 2: LLM Structuring with Speaker Inference & Action Items
+    system_prompt = """你是一个专业的随身语音秘书与会议纪要分析专家。
+请根据录音文字稿，若语境呈现多人交谈、访谈或会议，请智能推断说话人角色（如【发言人A】、【发言人B】或称呼），并将文字整理为对白或分段。
+请输出标准合法的纯 JSON 字符串，格式如下：
 {
-  "title": "简明凝练的标题（10字以内）",
-  "summary": "核心要点提炼（1-3句话，清晰明了）",
-  "action_items": ["待办/行动事项1", "待办/行动事项2"],
-  "tags": ["分类标签1", "分类标签2"]
+  "title": "简明凝练的标题（12字以内）",
+  "summary": "核心要点提炼（2-3句话，清晰明了）",
+  "action_items": [
+    {"text": "待办事项1", "done": false},
+    {"text": "待办事项2", "done": false}
+  ],
+  "tags": ["工作", "日常"],
+  "structured_transcript": "【发言人A】：...\n\n【发言人B】：..."
 }
-注意：只输出合法 JSON，不要带有 markdown 标记。"""
+注意：只输出合法 JSON，不要带有 markdown 标记或任何闲聊文本。"""
 
-        llm_payload = {
-            "model": llm_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"录音文字稿：\n{transcription}"},
-            ],
-            "temperature": 0.3,
-        }
+    llm_payload = {
+        "model": llm_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"录音文字稿：\n{transcription}"},
+        ],
+        "temperature": 0.2,
+    }
 
-        llm_resp = await client.post(
-            f"{STEPFUN_BASE_URL}/chat/completions",
-            headers=headers,
-            json=llm_payload,
-        )
-        if llm_resp.status_code != 200:
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        try:
+            llm_resp = await client.post(
+                f"{STEPFUN_BASE_URL}/chat/completions",
+                headers=headers,
+                json=llm_payload,
+            )
+            if llm_resp.status_code != 200:
+                return {
+                    "transcription": transcription,
+                    "summary": transcription,
+                    "title": "随手语音",
+                    "action_items": [],
+                    "tags": ["语音"],
+                    "structured_transcript": transcription,
+                }
+
+            llm_content = llm_resp.json()["choices"][0]["message"]["content"]
+            clean_json = llm_content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
+            try:
+                parsed = json.loads(clean_json)
+            except Exception:
+                parsed = {
+                    "title": "随手语音",
+                    "summary": clean_json,
+                    "action_items": [],
+                    "tags": ["语音"],
+                    "structured_transcript": transcription,
+                }
+
+            if "structured_transcript" not in parsed or not parsed["structured_transcript"]:
+                parsed["structured_transcript"] = transcription
+            parsed["transcription"] = parsed["structured_transcript"]
+            return parsed
+        except Exception as e:
+            logger.error(f"Error in LLM processing: {e}")
             return {
                 "transcription": transcription,
                 "summary": transcription,
                 "title": "随手语音",
                 "action_items": [],
                 "tags": ["语音"],
+                "structured_transcript": transcription,
             }
-
-        llm_content = llm_resp.json()["choices"][0]["message"]["content"]
-        clean_json = llm_content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-
-        try:
-            parsed = json.loads(clean_json)
-        except Exception:
-            parsed = {
-                "title": "随手语音",
-                "summary": clean_json,
-                "action_items": [],
-                "tags": ["语音"],
-            }
-
-        parsed["transcription"] = transcription
-        return parsed
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

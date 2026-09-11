@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
@@ -28,11 +30,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.example.shuolesa.ui.components.RecordingModeSelectSheet
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +55,9 @@ import com.example.shuolesa.theme.PureBlack
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.ui.screens.ActiveRecordingScreen
 import com.example.shuolesa.ui.screens.AudioPlayerScreen
+import com.example.shuolesa.ui.screens.LifeLogScreen
 import com.example.shuolesa.ui.screens.NodeSettingsScreen
+import com.example.shuolesa.ui.screens.TasksScreen
 import com.example.shuolesa.ui.screens.TimelineScreen
 import com.example.shuolesa.util.PermissionHelper
 import kotlinx.coroutines.delay
@@ -67,9 +73,11 @@ fun AppNavigation() {
     val repository = remember { AudioRepository(db.audioRecordDao()) }
     val permissionHelper = remember { PermissionHelper(context) }
 
+    val launchStrategy by prefs.launchStrategy.collectAsState(initial = "default")
     var selectedTab by remember { mutableIntStateOf(0) }
     var isRecording by remember { mutableStateOf(AudioCaptureService.isRunning) }
     var selectedRecord by remember { mutableStateOf<AudioRecordEntity?>(null) }
+    var showModeSelectSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -78,10 +86,13 @@ fun AppNavigation() {
         }
     }
 
-    val triggerStartRecord = {
+    val triggerStartRecord: (String?) -> Unit = { modeOverride ->
         if (permissionHelper.hasAllPermissions()) {
             val intent = Intent(context, AudioCaptureService::class.java).apply {
                 action = AudioCaptureService.ACTION_START
+                if (modeOverride != null) {
+                    putExtra(AudioCaptureService.EXTRA_RECORDING_MODE, modeOverride)
+                }
             }
             ContextCompat.startForegroundService(context, intent)
         } else {
@@ -89,13 +100,21 @@ fun AppNavigation() {
         }
     }
 
+    val onStartRecordClick: () -> Unit = {
+        if (launchStrategy == "prompt") {
+            showModeSelectSheet = true
+        } else {
+            triggerStartRecord(null)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = BgDark,
             floatingActionButton = {
-                if (!isRecording && selectedTab == 0) {
+                if (!isRecording && selectedTab in 0..1) {
                     FloatingActionButton(
-                        onClick = triggerStartRecord,
+                        onClick = onStartRecordClick,
                         containerColor = MintCyan,
                         contentColor = BgDark,
                         shape = CircleShape,
@@ -121,9 +140,18 @@ fun AppNavigation() {
                         repository = repository,
                         prefs = prefs,
                         onRecordClick = { record -> selectedRecord = record },
-                        onStartRecord = triggerStartRecord,
+                        onStartRecord = onStartRecordClick,
+                        onNavigateToLifeLog = { selectedTab = 1 },
                     )
-                    1 -> NodeSettingsScreen(
+                    1 -> LifeLogScreen(
+                        repository = repository,
+                        prefs = prefs,
+                    )
+                    2 -> TasksScreen(
+                        repository = repository,
+                        onRecordClick = { record -> selectedRecord = record },
+                    )
+                    3 -> NodeSettingsScreen(
                         prefs = prefs,
                         permissionHelper = permissionHelper,
                     )
@@ -147,9 +175,21 @@ fun AppNavigation() {
             selectedRecord?.let { record ->
                 AudioPlayerScreen(
                     record = record,
+                    repository = repository,
+                    prefs = prefs,
                     onBack = { selectedRecord = null },
                 )
             }
+        }
+
+        if (showModeSelectSheet) {
+            RecordingModeSelectSheet(
+                onDismiss = { showModeSelectSheet = false },
+                onSelectMode = { mode ->
+                    showModeSelectSheet = false
+                    triggerStartRecord(mode)
+                },
+            )
         }
     }
 }
@@ -163,6 +203,8 @@ private fun BottomNav(
 
     val items = listOf(
         NavItem("记忆流", Icons.Default.Timeline),
+        NavItem("生活手记", Icons.Default.AutoAwesome),
+        NavItem("待办", Icons.Default.CheckCircleOutline),
         NavItem("设置", Icons.Default.Settings),
     )
 
