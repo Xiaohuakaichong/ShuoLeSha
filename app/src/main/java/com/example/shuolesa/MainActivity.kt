@@ -80,11 +80,22 @@ class MainActivity : ComponentActivity() {
     private fun handleAutoRecordIntent(intent: Intent?) {
         if (intent?.getBooleanExtra("auto_start_recording", false) == true) {
             val helper = PermissionHelper(this)
-            if (helper.hasAllPermissions()) {
-                val recordIntent = Intent(this, AudioCaptureService::class.java).apply {
+            if (!helper.hasAllPermissions()) return
+            // API Key 卫生：无 Key 时不静默开录（AudioCaptureService 也会二次拦截）
+            kotlinx.coroutines.runBlocking {
+                val prefs = AppPreferences(this@MainActivity)
+                if (prefs.requiresApiKeySync()) {
+                    android.widget.Toast.makeText(
+                        this@MainActivity,
+                        "请先在设置中配置 API Key",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                    return@runBlocking
+                }
+                val recordIntent = Intent(this@MainActivity, AudioCaptureService::class.java).apply {
                     action = AudioCaptureService.ACTION_START
                 }
-                ContextCompat.startForegroundService(this, recordIntent)
+                ContextCompat.startForegroundService(this@MainActivity, recordIntent)
             }
         }
     }

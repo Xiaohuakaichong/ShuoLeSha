@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.repository.AudioRepository
+import com.example.shuolesa.network.UploadWorker
 import com.example.shuolesa.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,8 @@ class ChunkManager(
     }
 
     private val sessionId = UUID.randomUUID().toString().take(8)
+    /** 供 Service/UI 绑定当前会话分片 */
+    val sessionIdPublic: String get() = sessionId
     private var chunkIndex = 0
     private var currentWavWriter: WavWriter? = null
     private var currentAacWriter: AacWriter? = null
@@ -120,6 +123,8 @@ class ChunkManager(
             try {
                 val id = repository.insertRecord(record)
                 AppLogger.d(TAG, "Final chunk registered to DB: id=$id, path=${file.absolutePath}, size=${file.length()}")
+                // 最后一片也立即排队；AudioCaptureService.stopRecording 还会再 enqueue 一次（幂等）
+                UploadWorker.enqueueOrRunNow(context)
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Failed to register final chunk to DB", e)
             }
@@ -153,12 +158,18 @@ class ChunkManager(
         )
     }
 
+    /**
+     * 中间分片入库后立即触发 UploadWorker：边录边做 ASR（+ 分片级结构化）。
+     * 防重复依赖记录 status（PENDING→UPLOADING→UPLOADED）与 UploadWorker 互斥锁。
+     */
     private fun registerChunk(file: File, index: Int, startTime: Long, durationMs: Long, sizeBytes: Long) {
         val record = buildRecord(file, index, startTime, durationMs, sizeBytes)
         scope.launch(Dispatchers.IO) {
             try {
                 val id = repository.insertRecord(record)
-                AppLogger.d(TAG, "Intermediate chunk registered to DB: id=$id, index=$index")
+                AppLogger.d(TAG, "Intermediate chunk registered to DB: id=$id, index=$index — enqueue mid-upload")
+                // 录中上云：中间片即可转写，无需等停录
+                UploadWorker.enqueueOrRunNow(context)
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Failed to register intermediate chunk in DB", e)
             }

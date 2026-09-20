@@ -17,6 +17,12 @@ data class LifeLogResult(
     val workAndDecisions: String? = null,
     val unifiedActionItems: List<ActionItemModel> = emptyList(),
     val dailyQuote: String? = null,
+    /** v3.1：提醒事项（时间敏感 / 需要跟进） */
+    val reminders: List<String> = emptyList(),
+    /** v3.1：备忘录 / 随手记（非待办的杂记） */
+    val notepad: String? = null,
+    /** v3.1：值得长期记住的事实、偏好、承诺 */
+    val memory: List<String> = emptyList(),
     val rawJson: String = "",
 ) {
     fun toMarkdown(dateStr: String): String = buildString {
@@ -52,6 +58,24 @@ data class LifeLogResult(
             appendLine()
         }
 
+        if (reminders.isNotEmpty()) {
+            appendLine("## ⏰ 提醒事项 Reminders")
+            reminders.forEach { appendLine("- [ ] $it") }
+            appendLine()
+        }
+
+        if (!notepad.isNullOrBlank()) {
+            appendLine("## 📝 备忘录 Notepad")
+            appendLine(notepad)
+            appendLine()
+        }
+
+        if (memory.isNotEmpty()) {
+            appendLine("## 🧠 长期记忆 Memory")
+            memory.forEach { appendLine("- $it") }
+            appendLine()
+        }
+
         if (unifiedActionItems.isNotEmpty()) {
             appendLine("## ☑️ 今日聚合待办清单")
             unifiedActionItems.forEach { item ->
@@ -63,6 +87,32 @@ data class LifeLogResult(
     }
 
     companion object {
+        private fun parseStringList(json: JSONObject, vararg keys: String): List<String> {
+            for (key in keys) {
+                val arr = json.optJSONArray(key)
+                if (arr != null) {
+                    val out = mutableListOf<String>()
+                    for (i in 0 until arr.length()) {
+                        when (val item = arr.opt(i)) {
+                            is String -> item.trim().takeIf { it.isNotEmpty() }?.let { out.add(it) }
+                            is JSONObject -> {
+                                val t = item.optString("text", item.optString("content", "")).trim()
+                                if (t.isNotEmpty()) out.add(t)
+                            }
+                        }
+                    }
+                    return out
+                }
+                val s = json.optString(key, "").trim()
+                if (s.isNotEmpty()) {
+                    // 兼容模型把数组写成多行文本
+                    return s.lines().map { it.trim().removePrefix("- ").removePrefix("• ") }
+                        .filter { it.isNotEmpty() }
+                }
+            }
+            return emptyList()
+        }
+
         fun fromJson(rawContent: String): LifeLogResult {
             val clean = rawContent.trim()
             val fenceRegex = Regex("""```(?:json|JSON)?\s*([\s\S]*?)\s*```""")
@@ -86,6 +136,11 @@ data class LifeLogResult(
                 val dailyQuote = json.optString("daily_quote", "").ifBlank { null }
                 val socialAndChats = json.optString("social_and_chats", "").ifBlank { null }
                 val workAndDecisions = json.optString("work_and_decisions", "").ifBlank { null }
+                val notepad = json.optString("notepad", "").ifBlank {
+                    json.optString("notes", "").ifBlank { null }
+                }
+                val reminders = parseStringList(json, "reminders", "reminder_items")
+                val memory = parseStringList(json, "memory", "memories", "long_term_memory")
 
                 val highlights = mutableListOf<TimelineHighlight>()
                 val hlArray = json.optJSONArray("timeline_highlights")
@@ -132,6 +187,9 @@ data class LifeLogResult(
                     workAndDecisions = workAndDecisions,
                     unifiedActionItems = actionItems,
                     dailyQuote = dailyQuote,
+                    reminders = reminders,
+                    notepad = notepad,
+                    memory = memory,
                     rawJson = clean,
                 )
             } catch (_: Exception) {
@@ -143,6 +201,9 @@ data class LifeLogResult(
                     workAndDecisions = null,
                     unifiedActionItems = emptyList(),
                     dailyQuote = null,
+                    reminders = emptyList(),
+                    notepad = null,
+                    memory = emptyList(),
                     rawJson = rawContent,
                 )
             }

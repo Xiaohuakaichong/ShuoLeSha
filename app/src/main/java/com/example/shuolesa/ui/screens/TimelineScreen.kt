@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,19 +23,24 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -49,10 +56,16 @@ import com.example.shuolesa.data.repository.AudioRepository
 import com.example.shuolesa.network.UploadWorker
 import com.example.shuolesa.theme.Accent
 import com.example.shuolesa.theme.AccentOn
-import com.example.shuolesa.theme.Dimens
+import com.example.shuolesa.theme.CardElevated
 import com.example.shuolesa.theme.DangerRed
+import com.example.shuolesa.theme.Dimens
+import com.example.shuolesa.theme.SurfaceBorder
+import com.example.shuolesa.theme.TextMuted
+import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
+import com.example.shuolesa.theme.WarningAmber
 import com.example.shuolesa.ui.components.EmptyState
+import com.example.shuolesa.ui.components.FilterChip
 import com.example.shuolesa.ui.components.PageHeader
 import com.example.shuolesa.ui.components.RecordFilter
 import com.example.shuolesa.ui.components.RecordFilterMenus
@@ -63,7 +76,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 记录流：录音与导入的结果列表。每日复盘不出现在这里。
+ * 记录流（v3.2）：顶栏搜/问、FTS、处理中置顶提示；空态区分筛选/真空。
  */
 @Composable
 fun TimelineScreen(
@@ -71,6 +84,8 @@ fun TimelineScreen(
     prefs: AppPreferences,
     onRecordClick: (AudioRecordEntity) -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    showProcessingHint: Boolean = false,
+    onDismissProcessingHint: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -83,9 +98,42 @@ fun TimelineScreen(
     var filter by remember { mutableStateOf(RecordFilter()) }
     var pendingDelete by remember { mutableStateOf<AudioRecordEntity?>(null) }
     var isImporting by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchModeAsk by remember { mutableStateOf(false) }
+    var searchResults by remember { mutableStateOf<List<AudioRecordEntity>?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
 
     val streamRecords = remember(allRecords) {
         allRecords.orEmpty().filter { !it.isDailyLifeLogSummary() }
+    }
+
+    val processingRecords = remember(streamRecords) {
+        streamRecords.filter {
+            it.status == AudioRecordEntity.STATUS_PENDING ||
+                it.status == AudioRecordEntity.STATUS_UPLOADING
+        }.sortedByDescending { it.createdAt }
+    }
+
+    LaunchedEffect(searchQuery, searchModeAsk) {
+        val q = searchQuery.trim()
+        if (searchModeAsk) {
+            // 「问」为占位：不跑 FTS，避免与搜结果混淆
+            searchResults = null
+            isSearching = false
+            return@LaunchedEffect
+        }
+        if (q.isEmpty()) {
+            searchResults = null
+            isSearching = false
+            return@LaunchedEffect
+        }
+        isSearching = true
+        kotlinx.coroutines.delay(280)
+        val results = withContext(Dispatchers.IO) {
+            repository.searchRecords(q).filter { !it.isDailyLifeLogSummary() }
+        }
+        searchResults = results
+        isSearching = false
     }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
@@ -159,8 +207,13 @@ fun TimelineScreen(
         }
     }
 
-    val filteredRecords = remember(streamRecords, filter) {
-        streamRecords.filter { filter.matches(it) }
+    val filteredRecords = remember(streamRecords, filter, searchResults, searchQuery, searchModeAsk) {
+        val base = if (searchQuery.trim().isNotEmpty() && !searchModeAsk) {
+            searchResults.orEmpty()
+        } else {
+            streamRecords
+        }
+        base.filter { filter.matches(it) }
     }
 
     Column(
@@ -170,6 +223,7 @@ fun TimelineScreen(
     ) {
         PageHeader(
             title = "记录",
+            onSettings = onOpenSettings,
             trailing = {
                 if (!filter.isDefault) {
                     Text(
@@ -229,15 +283,110 @@ fun TimelineScreen(
             onChange = { filter = it },
         )
 
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
+
+        // 搜 / 问
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                label = "搜",
+                selected = !searchModeAsk,
+                onClick = { searchModeAsk = false },
+            )
+            FilterChip(
+                label = "问",
+                selected = searchModeAsk,
+                onClick = { searchModeAsk = true },
+            )
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                placeholder = {
+                    Text(
+                        if (searchModeAsk) "跨会话提问（即将支持）" else "搜索标题 / 转写 / 摘要",
+                        color = TextMuted,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = null,
+                        tint = TextMuted,
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Clear,
+                                contentDescription = "清除搜索",
+                                tint = TextMuted,
+                            )
+                        }
+                    }
+                },
+                enabled = !searchModeAsk,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = SurfaceBorder,
+                    focusedContainerColor = CardElevated,
+                    unfocusedContainerColor = CardElevated,
+                    disabledContainerColor = CardElevated.copy(alpha = 0.6f),
+                    cursorColor = Accent,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    disabledTextColor = TextMuted,
+                ),
+                shape = RoundedCornerShape(Dimens.fieldRadius),
+            )
+        }
+        if (searchModeAsk) {
+            Text(
+                text = "跨会话提问即将支持。现在请切回「搜」，用关键词检索标题 / 转写 / 摘要（FTS）。",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+
         Spacer(modifier = Modifier.height(Dimens.gapMd))
+
+        if (showProcessingHint || processingRecords.isNotEmpty()) {
+            ProcessingBanner(
+                count = processingRecords.size.coerceAtLeast(1),
+                onDismiss = onDismissProcessingHint,
+                onOpenFirst = {
+                    processingRecords.firstOrNull()?.let(onRecordClick)
+                },
+            )
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+        }
 
         if (allRecords == null) {
             Spacer(modifier = Modifier.weight(1f))
+        } else if (isSearching && searchQuery.trim().isNotEmpty() && !searchModeAsk) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Accent, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+            }
         } else if (filteredRecords.isEmpty()) {
+            val searching = searchQuery.trim().isNotEmpty() && !searchModeAsk
             EmptyTimeline(
                 hasAnyRecords = streamRecords.isNotEmpty(),
-                selectedFilter = if (filter.isDefault) "全部" else listOf(filter.dateLabel(), filter.mode, filter.status).filter { it != "全部" && it != "全部日期" && it != "类型" && it != "状态" }.joinToString(" · ").ifBlank { "当前筛选" },
+                selectedFilter = when {
+                    searching -> "搜索「${searchQuery.trim()}」"
+                    filter.isDefault -> "全部"
+                    else -> listOf(filter.dateLabel(), filter.mode, filter.status)
+                        .filter { it != "全部" && it != "全部日期" && it != "类型" && it != "状态" }
+                        .joinToString(" · ")
+                        .ifBlank { "当前筛选" }
+                },
                 triggerSeconds = lifelogTriggerDuration,
+                emptyBecauseSearch = searching,
                 onRetryFailed = {
                     scope.launch(Dispatchers.IO) {
                         repository.resetPendingAndFailed()
@@ -297,10 +446,51 @@ fun TimelineScreen(
 }
 
 @Composable
+private fun ProcessingBanner(
+    count: Int,
+    onDismiss: () -> Unit,
+    onOpenFirst: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.radiusMd))
+            .background(WarningAmber.copy(alpha = 0.15f))
+            .clickable(onClick = onOpenFirst)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "处理中 · $count 段",
+                style = MaterialTheme.typography.labelLarge,
+                color = WarningAmber,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "转写 → 摘要 → 待办。点此查看进度。",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+            )
+        }
+        Text(
+            text = "知道了",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextMuted,
+            modifier = Modifier
+                .clickable(onClick = onDismiss)
+                .padding(8.dp),
+        )
+    }
+}
+
+@Composable
 private fun EmptyTimeline(
     hasAnyRecords: Boolean,
     selectedFilter: String,
     triggerSeconds: Int,
+    emptyBecauseSearch: Boolean = false,
     onRetryFailed: () -> Unit = {},
 ) {
     Column(
@@ -308,11 +498,16 @@ private fun EmptyTimeline(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val title = if (!hasAnyRecords) "还没有记录" else "没有「$selectedFilter」的记录"
+        val title = when {
+            emptyBecauseSearch -> "没有匹配的结果"
+            !hasAnyRecords -> "还没有记录"
+            else -> "没有「$selectedFilter」的记录"
+        }
         val subtitle = when {
+            emptyBecauseSearch -> "换个关键词试试，可搜标题、转写或摘要。"
             !hasAnyRecords -> "点底部麦克风开始，或从右上角导入\n息屏时同时按住音量 +/- 约 ${triggerSeconds} 秒可盲操随身录音"
             selectedFilter == "失败" -> "没有失败的录音。处理中的条目在「处理中」筛选里。"
-            else -> "试试切换上方筛选。"
+            else -> "当前筛选下没有条目。试试切换上方筛选，或清除筛选。"
         }
         EmptyState(
             symbol = "",

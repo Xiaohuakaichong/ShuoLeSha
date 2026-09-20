@@ -20,25 +20,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,14 +50,15 @@ import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.model.ActionItemModel
 import com.example.shuolesa.data.repository.AudioRepository
 import com.example.shuolesa.theme.Accent
+import com.example.shuolesa.theme.CardElevated
 import com.example.shuolesa.theme.Dimens
+import com.example.shuolesa.theme.ModeCasual
 import com.example.shuolesa.theme.ModeDigest
 import com.example.shuolesa.theme.ModeMeeting
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
 import com.example.shuolesa.ui.components.FilterChip
-import com.example.shuolesa.ui.components.ModeBadge
 import com.example.shuolesa.ui.components.PageHeader
 import com.example.shuolesa.ui.components.TerminalCard
 import com.example.shuolesa.util.Formatters
@@ -74,11 +76,16 @@ data class TaskEntry(
     val allItemsInRecord: List<ActionItemModel>,
 )
 
+/**
+ * 待办（v3.2）：圆圈只勾选；整行点来源进纪要/今日；下方芯片 模式·标题·日期。
+ * 复盘来源不进播放器。
+ */
 @Composable
 fun TasksScreen(
     repository: AudioRepository,
     onRecordClick: (AudioRecordEntity) -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenDigest: (dateMs: Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -91,18 +98,22 @@ fun TasksScreen(
     val allTasks = remember(allRecords) {
         val list = mutableListOf<TaskEntry>()
         allRecords.orEmpty().sortedByDescending { it.createdAt }.forEach { r ->
-            if (r.isDailyLifeLogSummary()) return@forEach
             if (!r.actionItems.isNullOrBlank() && r.actionItems != "[]") {
                 val parsedItems = ActionItemModel.fromJsonString(r.actionItems)
-                val isLifeLog = r.isDailyLifeLogSummary()
-                val title = r.title?.ifBlank { null } ?: if (isLifeLog) "全天复盘" else "语音记录"
+                val isDigest = r.isDailyLifeLogSummary()
+                val title = r.title?.ifBlank { null }
+                    ?: when {
+                        isDigest -> "全天复盘"
+                        r.isMeeting() -> "会议录音"
+                        else -> "随身记录"
+                    }
                 parsedItems.forEachIndexed { idx, item ->
                     list.add(
                         TaskEntry(
                             recordId = r.id,
                             recordTitle = title,
                             recordDate = r.createdAt,
-                            isLifeLog = isLifeLog,
+                            isLifeLog = isDigest,
                             isMeeting = r.isMeeting(),
                             itemIndex = idx,
                             item = item,
@@ -144,6 +155,7 @@ fun TasksScreen(
         PageHeader(
             title = "待办",
             subtitle = "${pendingTasks.size} 项进行中",
+            onSettings = onOpenSettings,
             trailing = {
                 if (pendingTasks.isNotEmpty()) {
                     IconButton(
@@ -234,7 +246,10 @@ fun TasksScreen(
                         onToggle = { toggleTask(entry) },
                         onNavigate = {
                             val target = allRecords.orEmpty().find { it.id == entry.recordId }
-                            if (target != null) {
+                            if (target == null) return@TaskCard
+                            if (entry.isLifeLog || target.isDailyLifeLogSummary()) {
+                                onOpenDigest(target.createdAt)
+                            } else {
                                 onRecordClick(target)
                             }
                         },
@@ -252,49 +267,82 @@ private fun TaskCard(
     onNavigate: () -> Unit,
 ) {
     val isDone = entry.item.isDone
+    val modeLabel = when {
+        entry.isLifeLog -> "复盘"
+        entry.isMeeting -> "会议"
+        else -> "随身"
+    }
+    val modeColor = when {
+        entry.isLifeLog -> ModeDigest
+        entry.isMeeting -> ModeMeeting
+        else -> ModeCasual
+    }
+
     TerminalCard(contentPadding = false) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Dimens.cardPaddingVCompact),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
         ) {
+            // 圆圈只勾选
             IconButton(onClick = onToggle, modifier = Modifier.size(28.dp)) {
                 Icon(
                     imageVector = if (isDone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = null,
+                    contentDescription = if (isDone) "标为未完成" else "标为完成",
                     tint = if (isDone) Accent else TextMuted,
                     modifier = Modifier.size(22.dp),
                 )
             }
-            Column(modifier = Modifier.weight(1f)) {
+            // 整行其余区域点来源
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onNavigate),
+            ) {
                 Text(
                     text = entry.item.text,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isDone) TextMuted else TextPrimary,
                     textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
-                    modifier = Modifier.clickable(onClick = onToggle),
                 )
                 Spacer(modifier = Modifier.height(Dimens.gapXs))
+                // 上下文芯片：模式 · 标题 · 日期
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    ModeBadge(isMeeting = entry.isMeeting, isDigest = entry.isLifeLog)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(Dimens.chipRadius))
+                            .background(modeColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = modeLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = modeColor,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Text(
+                        text = "·",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                     Text(
                         text = entry.recordTitle,
                         style = MaterialTheme.typography.labelSmall,
-                        color = when {
-                            entry.isLifeLog -> ModeDigest
-                            entry.isMeeting -> ModeMeeting
-                            else -> TextSecondary
-                        },
+                        color = TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .clickable(onClick = onNavigate),
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text(
+                        text = "·",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.labelSmall,
                     )
                     Text(
                         text = Formatters.formatListDate(entry.recordDate),
