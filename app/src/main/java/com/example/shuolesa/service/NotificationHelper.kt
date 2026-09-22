@@ -41,8 +41,7 @@ class NotificationHelper(private val context: Context) {
         manager.createNotificationChannel(channel)
     }
 
-    fun buildRecordingNotification(): Notification {
-        // Tap notification → open app
+    fun buildRecordingNotification(startedAt: Long, modeTitle: String): Notification {
         val contentIntent = PendingIntent.getActivity(
             context,
             0,
@@ -52,7 +51,6 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Force stop action
         val stopIntent = PendingIntent.getService(
             context,
             1,
@@ -62,16 +60,32 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val label = modeTitle.ifBlank { "录音" }
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle("说了啥 · 录音中")
-            .setContentText("正在录制环境音频...")
+            .setContentTitle("说了啥 · $label")
+            .setContentText("正在听")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("正在听。点按回到应用，或在这里停止。"),
+            )
             .setSmallIcon(R.drawable.ic_mic)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setSilent(true)
+            .setWhen(startedAt)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setShortCriticalText(label)
+            .setRequestPromotedOngoing(true)
             .setContentIntent(contentIntent)
-            .addAction(R.drawable.ic_stop, "强制停止", stopIntent)
+            .addAction(R.drawable.ic_stop, "停止", stopIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
+    }
+
+    fun updateRecording(startedAt: Long, modeTitle: String) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, buildRecordingNotification(startedAt, modeTitle))
     }
 }

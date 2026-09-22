@@ -75,6 +75,7 @@ class AudioCaptureService : Service() {
     private var phoneStateMonitor: PhoneStateMonitor? = null
     private var hapticFeedback: HapticFeedback? = null
     private lateinit var notificationHelper: NotificationHelper
+    private var recordingStartedAt: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -121,8 +122,9 @@ class AudioCaptureService : Service() {
             return
         }
 
-        // Start foreground
-        val notification = notificationHelper.buildRecordingNotification()
+        // Start foreground. Promoted ongoing + chronometer is what ColorOS maps into 流体云.
+        recordingStartedAt = System.currentTimeMillis()
+        val notification = notificationHelper.buildRecordingNotification(recordingStartedAt, "录音")
         ServiceCompat.startForeground(
             this,
             NotificationHelper.NOTIFICATION_ID,
@@ -154,6 +156,9 @@ class AudioCaptureService : Service() {
 
         currentRecordingMode = mode
         currentRecordingModeTitle = if (mode == "meeting") "会议" else "随身"
+        if (recordingStartedAt > 0L) {
+            notificationHelper.updateRecording(recordingStartedAt, currentRecordingModeTitle)
+        }
         currentRecordingFormatDesc = if (mode == "meeting") {
             if (meetingFmt == "wav") "无损 WAV · 16kHz 原始采样" else "高清 AAC · 64kbps"
         } else {
