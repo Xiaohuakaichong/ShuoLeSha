@@ -94,34 +94,6 @@ interface AudioRecordDao {
     @Query("SELECT * FROM audio_records WHERE createdAt >= :startTime AND createdAt <= :endTime ORDER BY createdAt ASC")
     suspend fun getRecordsBetween(startTime: Long, endTime: Long): List<AudioRecordEntity>
 
-
     @Query("SELECT * FROM audio_records WHERE sessionId = :sessionId LIMIT 1")
     suspend fun getBySessionId(sessionId: String): AudioRecordEntity?
-
-    /**
-     * FTS4 全文检索（title / summary / transcription）。
-     * :ftsQuery 需由调用方消毒，例如 `"关键词*"`。
-     */
-    @Query(
-        """
-        SELECT * FROM audio_records
-        WHERE id IN (
-            SELECT rowid FROM audio_records_fts WHERE audio_records_fts MATCH :ftsQuery
-        )
-        ORDER BY createdAt DESC
-        """,
-    )
-    suspend fun searchByKeywordFts(ftsQuery: String): List<AudioRecordEntity>
-
-    /** LIKE 降级：FTS 不可用或查询含特殊字符时使用。 */
-    @Query(
-        """
-        SELECT * FROM audio_records
-        WHERE title LIKE '%' || :keyword || '%'
-           OR summary LIKE '%' || :keyword || '%'
-           OR transcription LIKE '%' || :keyword || '%'
-        ORDER BY createdAt DESC
-        """,
-    )
-    suspend fun searchByKeywordLike(keyword: String): List<AudioRecordEntity>
 }

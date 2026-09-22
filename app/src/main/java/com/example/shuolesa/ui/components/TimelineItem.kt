@@ -37,7 +37,7 @@ import com.example.shuolesa.theme.recordRoleColor
 import com.example.shuolesa.util.Formatters
 
 /**
- * 时间线卡片（v3.2）：时间 · 模式色点 · 标题 · 两行摘要 · 待办数。少用终端装饰密度。
+ * Spine timeline: time + role dot on the left, journal card on the right.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -95,16 +95,16 @@ fun TimelineItem(
             Box(
                 modifier = Modifier
                     .width(2.dp)
-                    .height(56.dp)
+                    .height(72.dp)
                     .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.22f)),
+                    .background(accent.copy(alpha = 0.28f)),
             )
         }
 
         TerminalCard(
             modifier = Modifier.weight(1f),
             borderColor = accent.copy(alpha = 0.18f),
-            backgroundColor = com.example.shuolesa.theme.CardElevated,
+            backgroundColor = com.example.shuolesa.theme.CardDark,
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

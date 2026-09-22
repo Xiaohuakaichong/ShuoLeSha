@@ -116,7 +116,7 @@ fun NodeSettingsScreen(
 
     val providerMode by prefs.providerMode.collectAsState(initial = ProviderPreset.STEPFUN.id)
     val baseUrl by prefs.baseUrl.collectAsState(initial = ProviderPreset.STEPFUN.defaultBaseUrl)
-    val apiKey by prefs.apiKey.collectAsState(initial = "")
+    val apiKey by prefs.apiKey.collectAsState(initial = AppPreferences.DEFAULT_API_KEY)
     val asrModel by prefs.asrModel.collectAsState(initial = ProviderPreset.STEPFUN.defaultAsrModel)
     val llmModel by prefs.llmModel.collectAsState(initial = ProviderPreset.STEPFUN.defaultLlmModel)
     val systemPrompt by prefs.systemPrompt.collectAsState(initial = AppPreferences.DEFAULT_SYSTEM_PROMPT)
@@ -166,7 +166,7 @@ fun NodeSettingsScreen(
     ) {
         PageHeader(
             title = "设置",
-            subtitle = "权限、信任、录音与引擎",
+            subtitle = "外观、录音与引擎",
             onBack = onBack,
         )
 
@@ -177,22 +177,6 @@ fun NodeSettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            // —— 数据与信任（v3.2）——
-            DataTrustSettingsContent(
-                baseUrl = baseUrl,
-                providerMode = providerMode,
-                asrModel = asrModel,
-                llmModel = llmModel,
-                keepLocalAudio = keepLocalAudio,
-                onSetKeepLocalAudio = { scope.launch { prefs.setKeepLocalAudio(it) } },
-                permissionHelper = permissionHelper,
-                onRequestRuntimePermissions = {
-                    permissionLauncher.launch(PermissionHelper.REQUIRED_PERMISSIONS)
-                },
-            )
-
-            Spacer(modifier = Modifier.height(Dimens.gapXl))
-
             SectionLabel("外观")
             Spacer(modifier = Modifier.height(Dimens.gapSm))
             Row(
@@ -229,11 +213,13 @@ fun NodeSettingsScreen(
                 recordingMode = recordingMode,
                 lifelogBitrateKbps = lifelogBitrateKbps,
                 meetingFormat = meetingFormat,
+                keepLocalAudio = keepLocalAudio,
                 autoResumeAfterCall = autoResumeAfterCall,
                 onSetLaunchStrategy = { scope.launch { prefs.setLaunchStrategy(it) } },
                 onSetRecordingMode = { scope.launch { prefs.setRecordingMode(it) } },
                 onSetLifelogBitrateKbps = { scope.launch { prefs.setLifelogBitrateKbps(it) } },
                 onSetMeetingFormat = { scope.launch { prefs.setMeetingFormat(it) } },
+                onSetKeepLocalAudio = { scope.launch { prefs.setKeepLocalAudio(it) } },
                 onSetAutoResumeAfterCall = { scope.launch { prefs.setAutoResumeAfterCall(it) } },
             )
 
@@ -309,135 +295,6 @@ fun NodeSettingsScreen(
 }
 
 // -----------------------------------------------------------------------------
-// 数据与信任（v3.2）
-// -----------------------------------------------------------------------------
-@Composable
-private fun DataTrustSettingsContent(
-    baseUrl: String,
-    providerMode: String,
-    asrModel: String,
-    llmModel: String,
-    keepLocalAudio: Boolean,
-    onSetKeepLocalAudio: (Boolean) -> Unit,
-    permissionHelper: PermissionHelper,
-    onRequestRuntimePermissions: () -> Unit,
-) {
-    SectionLabel("数据与信任")
-    Spacer(modifier = Modifier.height(Dimens.gapSm))
-
-    TerminalCard(borderColor = ModeCasual.copy(alpha = 0.25f)) {
-        Text(
-            text = "只手动开麦",
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(modifier = Modifier.height(Dimens.gapXs))
-        Text(
-            text = "本应用不会常开麦克风。只有你点底栏录音键、桌面快捷方式/磁贴，或主动使用音量盲操手势时才会开麦。",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextMuted,
-            lineHeight = 18.sp,
-        )
-    }
-
-    Spacer(modifier = Modifier.height(Dimens.gapMd))
-
-    TerminalCard {
-        Text(
-            text = "当前引擎",
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(modifier = Modifier.height(Dimens.gapXs))
-        Text(
-            text = "供应商：$providerMode",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary,
-        )
-        Text(
-            text = "Base URL：${baseUrl.ifBlank { "（未设置）" }}",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary,
-        )
-        Text(
-            text = "ASR：$asrModel",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextMuted,
-        )
-        Text(
-            text = "LLM：$llmModel",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextMuted,
-        )
-        Spacer(modifier = Modifier.height(Dimens.gapXs))
-        Text(
-            text = "可在下方「AI 引擎」分组修改；密钥仅保存在本机，默认不内置任何真实 Key。",
-            style = MaterialTheme.typography.labelSmall,
-            color = TextMuted,
-        )
-    }
-
-    Spacer(modifier = Modifier.height(Dimens.gapMd))
-
-    SettingsRow(
-        label = "保留本地录音原件",
-        subtitle = "识别完成后仍保留音频用于本地回放；关闭则更偏云端结果、节省空间",
-    ) {
-        Switch(
-            checked = keepLocalAudio,
-            onCheckedChange = onSetKeepLocalAudio,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Accent,
-                checkedTrackColor = Accent.copy(alpha = 0.3f),
-                uncheckedThumbColor = TextMuted,
-                uncheckedTrackColor = CardElevated,
-            ),
-        )
-    }
-
-    Spacer(modifier = Modifier.height(Dimens.gapMd))
-
-    TerminalCard {
-        Text(
-            text = "权限（可点申请）",
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(modifier = Modifier.height(Dimens.gapSm))
-        val hasMic = permissionHelper.hasPermission(Manifest.permission.RECORD_AUDIO)
-        val hasNotif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionHelper.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
-        } else true
-        PermissionStatusRow(
-            name = "麦克风",
-            isGranted = hasMic,
-            onClick = onRequestRuntimePermissions,
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        PermissionStatusRow(
-            name = "通知",
-            isGranted = hasNotif,
-            onClick = onRequestRuntimePermissions,
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        PermissionStatusRow(
-            name = "无障碍盲操",
-            isGranted = permissionHelper.isAccessibilityServiceEnabled(),
-            onClick = { permissionHelper.openAccessibilitySettings() },
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        PermissionStatusRow(
-            name = "忽略电池优化",
-            isGranted = permissionHelper.isBatteryOptimizationIgnored(),
-            onClick = { permissionHelper.requestIgnoreBatteryOptimizations() },
-        )
-    }
-}
-
-// -----------------------------------------------------------------------------
 // TAB 0: 录音品质与启动策略
 // -----------------------------------------------------------------------------
 @Composable
@@ -446,11 +303,13 @@ private fun RecordingSettingsContent(
     recordingMode: String,
     lifelogBitrateKbps: Int,
     meetingFormat: String,
+    keepLocalAudio: Boolean,
     autoResumeAfterCall: Boolean,
     onSetLaunchStrategy: (String) -> Unit,
     onSetRecordingMode: (String) -> Unit,
     onSetLifelogBitrateKbps: (Int) -> Unit,
     onSetMeetingFormat: (String) -> Unit,
+    onSetKeepLocalAudio: (Boolean) -> Unit,
     onSetAutoResumeAfterCall: (Boolean) -> Unit,
 ) {
     SectionLabel("录制启动策略与音质")
@@ -565,12 +424,22 @@ private fun RecordingSettingsContent(
 
     Spacer(modifier = Modifier.height(Dimens.gapMd))
 
-    // 原件保留开关已上移到「数据与信任」，避免重复设置
-    Text(
-        text = "本地原件是否保留，请在上方「数据与信任」中调整。",
-        style = MaterialTheme.typography.labelSmall,
-        color = TextMuted,
-    )
+    // Storage & Audio Retention
+    SettingsRow(
+        label = "保留本地录音原件",
+        subtitle = "识别完成后仍保留音频用于本地回放",
+    ) {
+        Switch(
+            checked = keepLocalAudio,
+            onCheckedChange = onSetKeepLocalAudio,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Accent,
+                checkedTrackColor = Accent.copy(alpha = 0.3f),
+                uncheckedThumbColor = TextMuted,
+                uncheckedTrackColor = CardElevated,
+            ),
+        )
+    }
 
     Spacer(modifier = Modifier.height(Dimens.gapMd))
 
@@ -1164,7 +1033,7 @@ private fun AboutSettingsContent(
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v3.2.0",
+                    text = "v3.0.5",
                     style = MaterialTheme.typography.labelSmall,
                     color = Accent,
                     fontWeight = FontWeight.Bold,

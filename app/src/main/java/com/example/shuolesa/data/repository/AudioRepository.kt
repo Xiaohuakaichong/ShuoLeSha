@@ -97,35 +97,4 @@ class AudioRepository(private val dao: AudioRecordDao) {
         val oldRecords = dao.getOldRecords(cutoff)
         oldRecords.forEach { dao.deleteById(it.id) }
     }
-
-    /**
-     * 本地全文检索：优先 FTS4，失败时降级 LIKE。
-     * 空关键字返回空列表（由 UI 展示「请输入」空态）。
-     */
-    suspend fun searchRecords(keyword: String): List<AudioRecordEntity> {
-        val q = keyword.trim()
-        if (q.isEmpty()) return emptyList()
-        val ftsQuery = buildFtsQuery(q)
-        if (ftsQuery.isNotEmpty()) {
-            try {
-                return dao.searchByKeywordFts(ftsQuery)
-            } catch (_: Exception) {
-                // fall through to LIKE
-            }
-        }
-        return dao.searchByKeywordLike(q)
-    }
-
-    companion object {
-        /** 将用户输入转为较安全的 FTS4 前缀查询；去掉特殊运算符。 */
-        fun buildFtsQuery(raw: String): String {
-            val tokens = raw.trim()
-                .split(Regex("\\s+"))
-                .map { it.replace(Regex("""["*():^]"""), "") }
-                .filter { it.isNotBlank() }
-            if (tokens.isEmpty()) return ""
-            // FTS4 前缀：token* ；多词默认 AND
-            return tokens.joinToString(" ") { "$it*" }
-        }
-    }
 }

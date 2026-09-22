@@ -63,24 +63,9 @@ class AudioCaptureService : Service() {
         var currentRecordingFormatDesc: String = "AAC 硬件压缩 · 24kbps (~10MB/h)"
             private set
 
-        /** 当前分片序号（从 1 起），供录音进度台绑定 */
-        @Volatile
-        var liveChunkIndex: Int = 0
-            private set
-
-        /** 当前会话 ID 前缀，供 UI 关联已入库分片 */
-        @Volatile
-        var liveSessionId: String = ""
-            private set
-
         // Callbacks for UI updates
         var onStateChanged: ((Boolean) -> Unit)? = null
         var onElapsedChanged: ((Long) -> Unit)? = null
-
-        internal fun updateLiveProgress(chunkIndex: Int, sessionId: String) {
-            liveChunkIndex = chunkIndex
-            liveSessionId = sessionId
-        }
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -134,18 +119,6 @@ class AudioCaptureService : Service() {
             Log.e(TAG, "RECORD_AUDIO permission not granted")
             stopSelf()
             return
-        }
-
-        // API Key 卫生：云端端点无 Key 时拒绝开录（不静默回落密钥）
-        run {
-            val prefsEarly = AppPreferences(this)
-            val needsKey = kotlinx.coroutines.runBlocking { prefsEarly.requiresApiKeySync() }
-            if (needsKey) {
-                Log.e(TAG, "API Key not configured; refuse to start recording")
-                com.example.shuolesa.util.AppLogger.w(TAG, "开录被拒绝：未配置 API Key，请前往设置填写")
-                stopSelf()
-                return
-            }
         }
 
         // Start foreground
@@ -228,20 +201,11 @@ class AudioCaptureService : Service() {
         // Start recording pipeline
         serviceScope.launch(Dispatchers.IO) {
             chunkMgr.startSession()
-            // 会话一开始就暴露 sessionId / 分片序号，进度台无需等首帧 PCM
-            Companion.updateLiveProgress(
-                chunkMgr.currentChunkIndex.coerceAtLeast(1),
-                chunkMgr.sessionIdPublic,
-            )
 
             recorder.startRecording(object : AudioRecorder.PcmCallback {
                 override fun onPcmData(buffer: ShortArray, readCount: Int) {
                     chunkMgr.onPcmFrame(buffer, readCount)
                     elapsedMs = chunkMgr.elapsedMs
-                    Companion.updateLiveProgress(
-                        chunkMgr.currentChunkIndex.coerceAtLeast(1),
-                        chunkMgr.sessionIdPublic,
-                    )
                     onElapsedChanged?.invoke(elapsedMs)
                 }
             })
@@ -253,8 +217,6 @@ class AudioCaptureService : Service() {
 
         isRunning = false
         elapsedMs = 0
-        liveChunkIndex = 0
-        liveSessionId = ""
         onStateChanged?.invoke(false)
 
         // Stop recording pipeline

@@ -21,10 +21,8 @@ import org.json.JSONArray
 import java.io.File
 
 /**
- * WorkManager worker for background audio upload / ASR / 分片结构化。
- * v3.1：中间分片在 ChunkManager.registerChunk 后即可 enqueue；
- * 同一 chunk 靠 status（PENDING/FAILED → UPLOADING → UPLOADED）+ uploadMutex 防重复。
- * 日志只打印 keyLength，绝不打印完整 API Key。
+ * WorkManager worker for background audio upload.
+ * Runs when network becomes available, uploads pending chunks serially.
  */
 class UploadWorker(
     appContext: Context,

@@ -9,11 +9,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +33,7 @@ import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -55,13 +54,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import com.example.shuolesa.data.db.AppDatabase
 import com.example.shuolesa.data.db.AudioRecordEntity
@@ -73,9 +72,10 @@ import com.example.shuolesa.theme.AccentOn
 import com.example.shuolesa.theme.AppColor
 import com.example.shuolesa.theme.Dimens
 import com.example.shuolesa.theme.InkAtmosphere
+import com.example.shuolesa.theme.ModeCasual
+import com.example.shuolesa.ui.components.pressScale
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
-import com.example.shuolesa.ui.components.pressScale
 import com.example.shuolesa.ui.components.RecordingModeSelectSheet
 import com.example.shuolesa.ui.screens.ActiveRecordingScreen
 import com.example.shuolesa.ui.screens.AudioPlayerScreen
@@ -87,8 +87,7 @@ import com.example.shuolesa.util.PermissionHelper
 import kotlinx.coroutines.delay
 
 /**
- * 主导航（v3.2）：底栏「记录 | 今日 | 🎤 | 待办」；设置为右上角齿轮二级页。
- * 录音键：短按按启动策略开录；长按弹出随身/会议。
+ * 主导航：记录 / 今日 | 录音 | 待办 / 设置。录音键几何居中。
  */
 @Composable
 fun AppNavigation() {
@@ -99,18 +98,10 @@ fun AppNavigation() {
     val permissionHelper = remember { PermissionHelper(context) }
 
     val launchStrategy by prefs.launchStrategy.collectAsState(initial = "default")
-    val apiKey by prefs.apiKey.collectAsState(initial = "")
-    val baseUrl by prefs.baseUrl.collectAsState(initial = "")
-    val missingApiKey = apiKey.isBlank() && !prefs.isLikelyLocalEndpoint(baseUrl)
-
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(AudioCaptureService.isRunning) }
     var selectedRecord by remember { mutableStateOf<AudioRecordEntity?>(null) }
     var showModeSelectSheet by remember { mutableStateOf(false) }
-    var showProcessingBanner by remember { mutableStateOf(false) }
-    var lifeLogFocusDateMs by rememberSaveable { mutableLongStateOf(0L) }
-    var wasRecording by remember { mutableStateOf(AudioCaptureService.isRunning) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -119,33 +110,7 @@ fun AppNavigation() {
         }
     }
 
-    LaunchedEffect(isRecording) {
-        if (wasRecording && !isRecording) {
-            // 停录落地：回「记录」并展示处理中横幅
-            showProcessingBanner = true
-            selectedTab = 0
-            showSettings = false
-            selectedRecord = null
-        }
-        wasRecording = isRecording
-        if (isRecording) showModeSelectSheet = false
-    }
-
-    LaunchedEffect(showProcessingBanner) {
-        if (showProcessingBanner) {
-            delay(12_000)
-            showProcessingBanner = false
-        }
-    }
-
-    val openSettings: () -> Unit = { showSettings = true }
-
-    val triggerStartRecord: (String?) -> Unit = start@{ modeOverride ->
-        if (missingApiKey) {
-            Toast.makeText(context, "请先在设置中配置 API Key", Toast.LENGTH_LONG).show()
-            showSettings = true
-            return@start
-        }
+    val triggerStartRecord: (String?) -> Unit = { modeOverride ->
         if (permissionHelper.hasMicPermission()) {
             val intent = Intent(context, AudioCaptureService::class.java).apply {
                 action = AudioCaptureService.ACTION_START
@@ -156,11 +121,11 @@ fun AppNavigation() {
             ContextCompat.startForegroundService(context, intent)
         } else {
             Toast.makeText(context, "请先授予麦克风权限", Toast.LENGTH_SHORT).show()
-            showSettings = true
+            selectedTab = 3
         }
     }
 
-    val onRecordShortClick: () -> Unit = {
+    val onStartRecordClick: () -> Unit = {
         if (launchStrategy == "prompt") {
             showModeSelectSheet = true
         } else {
@@ -168,23 +133,11 @@ fun AppNavigation() {
         }
     }
 
-    val onRecordLongClick: () -> Unit = {
-        showModeSelectSheet = true
-    }
+    val onOpenSettings = { selectedTab = 3 }
+    val mainChromeVisible = !isRecording && selectedRecord == null
 
-    val mainChromeVisible = !isRecording && selectedRecord == null && !showSettings
-
-    // 录音中返回 = 最小化到后台，不停录、不 finish
     BackHandler(enabled = isRecording) {
         (context as? Activity)?.moveTaskToBack(true)
-    }
-
-    BackHandler(enabled = showSettings && !isRecording) {
-        showSettings = false
-    }
-
-    BackHandler(enabled = selectedRecord != null && !isRecording) {
-        selectedRecord = null
     }
 
     var lastBackExitAt by remember { mutableLongStateOf(0L) }
@@ -198,6 +151,10 @@ fun AppNavigation() {
         }
     }
 
+    LaunchedEffect(isRecording) {
+        if (isRecording) showModeSelectSheet = false
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         InkAtmosphere()
         Scaffold(
@@ -207,8 +164,7 @@ fun AppNavigation() {
                     MainBottomBar(
                         selectedTab = selectedTab,
                         onTabSelected = { selectedTab = it },
-                        onRecordClick = onRecordShortClick,
-                        onRecordLongClick = onRecordLongClick,
+                        onRecordClick = onStartRecordClick,
                     )
                 }
             },
@@ -223,30 +179,28 @@ fun AppNavigation() {
                         repository = repository,
                         prefs = prefs,
                         onRecordClick = { record -> selectedRecord = record },
-                        onOpenSettings = openSettings,
-                        showProcessingHint = showProcessingBanner,
-                        onDismissProcessingHint = { showProcessingBanner = false },
+                        onOpenSettings = onOpenSettings,
                     )
                 }
                 KeepAliveTab(selected = selectedTab == 1, visited = 1 in visitedTabs) {
                     LifeLogScreen(
                         repository = repository,
                         prefs = prefs,
-                        onOpenSettings = openSettings,
+                        onOpenSettings = onOpenSettings,
                         onRecordClick = { record -> selectedRecord = record },
-                        focusDateMs = lifeLogFocusDateMs.takeIf { it > 0L },
-                        onFocusDateConsumed = { lifeLogFocusDateMs = 0L },
                     )
                 }
                 KeepAliveTab(selected = selectedTab == 2, visited = 2 in visitedTabs) {
                     TasksScreen(
                         repository = repository,
                         onRecordClick = { record -> selectedRecord = record },
-                        onOpenSettings = openSettings,
-                        onOpenDigest = { dateMs ->
-                            lifeLogFocusDateMs = dateMs
-                            selectedTab = 1
-                        },
+                        onOpenSettings = onOpenSettings,
+                    )
+                }
+                KeepAliveTab(selected = selectedTab == 3, visited = 3 in visitedTabs) {
+                    NodeSettingsScreen(
+                        prefs = prefs,
+                        permissionHelper = permissionHelper,
                     )
                 }
             }
@@ -257,12 +211,7 @@ fun AppNavigation() {
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            ActiveRecordingScreen(
-                repository = repository,
-                onMinimize = {
-                    (context as? Activity)?.moveTaskToBack(true)
-                },
-            )
+            ActiveRecordingScreen()
         }
 
         AnimatedVisibility(
@@ -277,24 +226,6 @@ fun AppNavigation() {
                     prefs = prefs,
                     onBack = { selectedRecord = null },
                     onDeleted = { selectedRecord = null },
-                )
-            }
-        }
-
-        AnimatedVisibility(
-            visible = showSettings && !isRecording,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it }),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(AppColor.background),
-            ) {
-                NodeSettingsScreen(
-                    prefs = prefs,
-                    permissionHelper = permissionHelper,
-                    onBack = { showSettings = false },
                 )
             }
         }
@@ -344,27 +275,20 @@ private fun KeepAliveTab(
 
 private data class BottomTab(val label: String, val icon: ImageVector)
 
-/**
- * 底栏几何：左 2 Tab + 中空洞(录音键) + 右 1 Tab。
- * 录音键落在 Spacer 预留空洞正中，不与「今日」热区重叠。
- */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainBottomBar(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     onRecordClick: () -> Unit,
-    onRecordLongClick: () -> Unit,
 ) {
     val items = listOf(
         BottomTab("记录", Icons.Outlined.GraphicEq),
         BottomTab("今日", Icons.Default.Today),
         BottomTab("待办", Icons.Default.CheckCircleOutline),
+        BottomTab("设置", Icons.Outlined.Settings),
     )
 
     val pillShape = RoundedCornerShape(34.dp)
-    val hole = Dimens.recordButton + 16.dp
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -386,45 +310,38 @@ private fun MainBottomBar(
                 .border(Dimens.borderThin, AppColor.outline, pillShape),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 左半：记录 + 今日（与右半等宽，保证空洞在几何中心）
-            Row(
+            BottomTabItem(
+                tab = items[0],
+                selected = selectedTab == 0,
+                onClick = { onTabSelected(0) },
                 modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BottomTabItem(
-                    tab = items[0],
-                    selected = selectedTab == 0,
-                    onClick = { onTabSelected(0) },
-                    modifier = Modifier.weight(1f),
-                )
-                BottomTabItem(
-                    tab = items[1],
-                    selected = selectedTab == 1,
-                    onClick = { onTabSelected(1) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            // 预留空洞：录音键落在正中，不与「今日」热区重叠
-            Spacer(modifier = Modifier.size(hole))
-            // 右半：待办（单 Tab 居中于右半）
-            Box(
+            )
+            BottomTabItem(
+                tab = items[1],
+                selected = selectedTab == 1,
+                onClick = { onTabSelected(1) },
                 modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                BottomTabItem(
-                    tab = items[2],
-                    selected = selectedTab == 2,
-                    onClick = { onTabSelected(2) },
-                    modifier = Modifier.fillMaxWidth(0.5f),
-                )
-            }
+            )
+            Spacer(modifier = Modifier.size(Dimens.recordButton))
+            BottomTabItem(
+                tab = items[2],
+                selected = selectedTab == 2,
+                onClick = { onTabSelected(2) },
+                modifier = Modifier.weight(1f),
+            )
+            BottomTabItem(
+                tab = items[3],
+                selected = selectedTab == 3,
+                onClick = { onTabSelected(3) },
+                modifier = Modifier.weight(1f),
+            )
         }
 
         val recordInteraction = remember { MutableInteractionSource() }
         val recordPressed by recordInteraction.collectIsPressedAsState()
         Box(
             modifier = Modifier
-                .align(Alignment.Center)
+                .align(Alignment.TopCenter)
                 .offset(y = (-18).dp)
                 .pressScale(recordPressed, 0.94f)
                 .size(Dimens.recordButton)
@@ -436,17 +353,16 @@ private fun MainBottomBar(
                 )
                 .clip(CircleShape)
                 .background(Accent)
-                .combinedClickable(
+                .clickable(
                     interactionSource = recordInteraction,
                     indication = null,
                     onClick = onRecordClick,
-                    onLongClick = onRecordLongClick,
                 ),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Mic,
-                contentDescription = "开始录音（短按默认，长按选模式）",
+                contentDescription = "开始录音",
                 tint = AccentOn,
                 modifier = Modifier.size(Dimens.fabIconSize),
             )

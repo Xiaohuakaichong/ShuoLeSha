@@ -65,8 +65,7 @@ class AppPreferences(private val context: Context) {
 2. tags 从 [工作, 会议, 灵感, 待办, 学习, 生活, 随想] 中提炼 1-3 个；
 3. 必须输出合法且标准的 JSON 对象，不要输出任何推理说明、思考过程或多余文本。"""
 
-        /** 不再内置任何默认云端密钥；空字符串表示未配置。 */
-        const val DEFAULT_API_KEY = ""
+        const val DEFAULT_API_KEY = "1UEjWRLNDhItB04RbcyxKZIxxWqWzhVo4O56rkZsrRKBHOZ8FbFkc1bqEKlUWFIxq"
 
         private val KEY_PROVIDER_MODE = stringPreferencesKey("provider_mode")
         private val KEY_BASE_URL = stringPreferencesKey("base_url")
@@ -91,7 +90,7 @@ class AppPreferences(private val context: Context) {
     val providerMode: Flow<String> = context.dataStore.data.map { it[KEY_PROVIDER_MODE] ?: ProviderPreset.STEPFUN.id }
     val baseUrl: Flow<String> = context.dataStore.data.map { it[KEY_BASE_URL] ?: ProviderPreset.STEPFUN.defaultBaseUrl }
     val apiKey: Flow<String> = context.dataStore.data.map {
-        it[KEY_API_KEY]?.trim().orEmpty()
+        it[KEY_API_KEY]?.takeIf { k -> k.isNotBlank() } ?: DEFAULT_API_KEY
     }
     val asrModel: Flow<String> = context.dataStore.data.map { it[KEY_ASR_MODEL] ?: ProviderPreset.STEPFUN.defaultAsrModel }
     val llmModel: Flow<String> = context.dataStore.data.map { it[KEY_LLM_MODEL] ?: ProviderPreset.STEPFUN.defaultLlmModel }
@@ -169,21 +168,8 @@ class AppPreferences(private val context: Context) {
     }
 
     suspend fun getApiKeySync(): String {
-        return context.dataStore.data.first()[KEY_API_KEY]?.trim().orEmpty()
-    }
-
-    /** 是否已配置可用 API Key（非空白）。本地免认证端点可放宽。 */
-    suspend fun hasApiKeyConfiguredSync(): Boolean = getApiKeySync().isNotBlank()
-
-    fun isLikelyLocalEndpoint(url: String): Boolean {
-        return url.contains("localhost") || url.contains("127.0.0.1") ||
-            url.contains("10.0.2.2") || url.contains("192.168.")
-    }
-
-    suspend fun requiresApiKeySync(): Boolean {
-        val base = getBaseUrlSync()
-        if (isLikelyLocalEndpoint(base)) return false
-        return getApiKeySync().isBlank()
+        val k = context.dataStore.data.first()[KEY_API_KEY]
+        return if (k.isNullOrBlank()) DEFAULT_API_KEY else k
     }
 
     suspend fun getAsrModelSync(): String {
