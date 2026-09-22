@@ -1,5 +1,6 @@
 package com.example.shuolesa.network
 
+import android.util.Base64
 import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -42,15 +43,6 @@ class ApiService {
             return if (trimmed.endsWith("/v1")) trimmed else "$trimmed/v1"
         }
 
-        private fun normalizeAsrUrl(rawUrl: String): String {
-            val base = normalizeBaseUrl(rawUrl)
-            val asrBase = if (base.contains("api.stepfun.com/step_plan")) {
-                base.replace("step_plan/v1", "v1").replace("step_plan", "")
-            } else {
-                base
-            }
-            return "$asrBase/audio/transcriptions"
-        }
     }
 
     private val client = OkHttpClient.Builder()
@@ -139,10 +131,108 @@ class ApiService {
     }
 
     /**
-     * 转写音频文件。走用户填写的 Base URL，这样 Step Plan 的 Credit 才能扣到套餐上。
+     * 转写音频。Step Plan 没有 /audio/transcriptions，只能走套餐上的 SSE 接口，额度才扣 Credit。
      */
     fun transcribeAudio(baseUrl: String, apiKey: String, asrModel: String, audioFile: File): Result<String> {
-        return transcribeOpenAiMultipart(baseUrl, apiKey, asrModel, audioFile)
+        val base = normalizeBaseUrl(baseUrl)
+        return if (base.contains("stepfun", ignoreCase = true) && base.contains("step_plan")) {
+            transcribeStepPlanSse(base, apiKey, asrModel, audioFile)
+        } else {
+            transcribeOpenAiMultipart(baseUrl, apiKey, asrModel, audioFile)
+        }
+    }
+
+    private fun transcribeStepPlanSse(
+        baseUrl: String,
+        apiKey: String,
+        asrModel: String,
+        audioFile: File,
+    ): Result<String> {
+        return try {
+            val url = "$baseUrl/audio/asr/sse"
+            val formatType = when {
+                audioFile.name.endsWith(".wav", ignoreCase = true) -> "wav"
+                audioFile.name.endsWith(".mp3", ignoreCase = true) -> "mp3"
+                audioFile.name.endsWith(".ogg", ignoreCase = true) ||
+                    audioFile.name.endsWith(".opus", ignoreCase = true) -> "ogg"
+                audioFile.name.endsWith(".pcm", ignoreCase = true) -> "pcm"
+                else -> "m4a"
+            }
+            val audio = JSONObject().apply {
+                put("data", Base64.encodeToString(audioFile.readBytes(), Base64.NO_WRAP))
+                put(
+                    "input",
+                    JSONObject().apply {
+                        put(
+                            "transcription",
+                            JSONObject().apply {
+                                put("model", asrModel.ifBlank { "stepaudio-2.5-asr" })
+                                put("language", "zh")
+                                put("enable_itn", true)
+                            },
+                        )
+                        put(
+                            "format",
+                            JSONObject().apply {
+                                put("type", formatType)
+                                if (formatType == "pcm") {
+                                    put("codec", "pcm_s16le")
+                                    put("rate", 16000)
+                                    put("bits", 16)
+                                    put("channel", 1)
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+            val body = JSONObject().put("audio", audio).toString()
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .header("Accept", "text/event-stream")
+                .post(body.toRequestBody("application/json".toMediaType()))
+            if (apiKey.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $apiKey")
+            }
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val bodyStr = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Step Plan ASR failed ${response.code}: $bodyStr")
+                    val errMsg = try {
+                        JSONObject(bodyStr).optJSONObject("error")?.optString("message") ?: bodyStr
+                    } catch (_: Exception) {
+                        bodyStr
+                    }
+                    return Result.failure(Exception("语音识别失败 (${response.code}): $errMsg"))
+                }
+                var doneText = ""
+                val deltas = StringBuilder()
+                bodyStr.lineSequence().forEach { rawLine ->
+                    val line = rawLine.trim()
+                    if (!line.startsWith("data:")) return@forEach
+                    val payload = line.removePrefix("data:").trim()
+                    if (payload.isEmpty() || payload == "[DONE]" || !payload.startsWith("{")) return@forEach
+                    val event = try {
+                        JSONObject(payload)
+                    } catch (_: Exception) {
+                        return@forEach
+                    }
+                    when (event.optString("type")) {
+                        "transcript.text.done" -> doneText = event.optString("text")
+                        "transcript.text.delta" -> deltas.append(event.optString("delta"))
+                    }
+                }
+                val text = doneText.ifBlank { deltas.toString() }.trim()
+                if (text.isBlank()) {
+                    Result.failure(Exception("音频未检测到清晰人声发言"))
+                } else {
+                    Result.success(text)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Step Plan ASR error", e)
+            Result.failure(Exception("语音识别网络异常: ${e.localizedMessage ?: e.message}"))
+        }
     }
 
     /**
