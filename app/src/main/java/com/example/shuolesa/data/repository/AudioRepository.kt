@@ -21,6 +21,9 @@ class AudioRepository(private val dao: AudioRecordDao) {
     suspend fun updateActionItems(id: Long, actionItemsJson: String) =
         dao.updateActionItems(id, actionItemsJson)
 
+    suspend fun updateSegments(id: Long, segmentsJson: String) =
+        dao.updateSegments(id, segmentsJson)
+
     suspend fun getRecordsBetween(startTime: Long, endTime: Long): List<AudioRecordEntity> =
         dao.getRecordsBetween(startTime, endTime)
 

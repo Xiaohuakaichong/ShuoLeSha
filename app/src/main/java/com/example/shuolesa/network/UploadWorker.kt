@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.shuolesa.data.db.AppDatabase
 import com.example.shuolesa.data.model.ActionItemModel
+import com.example.shuolesa.data.model.MemorySegment
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
 import com.example.shuolesa.util.AppLogger
@@ -186,7 +187,18 @@ class UploadWorker(
                 val defaultTitle = if (isMeeting) "会议纪要" else "随身生活记录"
                 val title = notes?.title?.takeIf { it.isNotBlank() } ?: defaultTitle
                 val summary = notes?.summary ?: transcription
-                val actionItemsJson = notes?.actionItems?.let { ActionItemModel.toJsonString(it) }
+                val segments = if (transcription.length < 80) {
+                    listOf(MemorySegment.fallback(title, summary, transcription, notes?.actionItems.orEmpty()))
+                } else {
+                    apiService.segmentTranscript(baseUrl, apiKey, llmModel, transcription).getOrElse {
+                        AppLogger.w(TAG, "Segment failed for #${record.id}: ${it.message}")
+                        listOf(MemorySegment.fallback(title, summary, transcription, notes?.actionItems.orEmpty()))
+                    }
+                }
+                val segmentActions = segments.flatMap { it.actionItems }
+                val actionItemsJson = ActionItemModel.toJsonString(
+                    segmentActions.ifEmpty { notes?.actionItems.orEmpty() },
+                )
 
                 val tagsList = notes?.tags?.toMutableList() ?: mutableListOf()
                 val modeTag = if (isMeeting) "会议" else "随身"
@@ -206,6 +218,7 @@ class UploadWorker(
                     transcription = finalTranscription,
                     agentResult = rawJson,
                 )
+                repository.updateSegments(record.id, MemorySegment.toJson(segments))
                 AppLogger.d(TAG, "Record #${record.id} successfully processed and saved as UPLOADED! Title: $title")
                 successCount++
 

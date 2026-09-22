@@ -91,6 +91,9 @@ interface AudioRecordDao {
     @Query("UPDATE audio_records SET actionItems = :actionItems WHERE id = :id")
     suspend fun updateActionItems(id: Long, actionItems: String?)
 
+    @Query("UPDATE audio_records SET segmentsJson = :segmentsJson WHERE id = :id")
+    suspend fun updateSegments(id: Long, segmentsJson: String)
+
     @Query("SELECT * FROM audio_records WHERE createdAt >= :startTime AND createdAt <= :endTime ORDER BY createdAt ASC")
     suspend fun getRecordsBetween(startTime: Long, endTime: Long): List<AudioRecordEntity>
 

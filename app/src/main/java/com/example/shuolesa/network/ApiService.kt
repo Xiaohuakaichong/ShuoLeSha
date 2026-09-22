@@ -10,6 +10,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import com.example.shuolesa.data.model.ActionItemModel
+import com.example.shuolesa.data.model.MemoryAnswer
+import com.example.shuolesa.data.model.MemorySegment
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -407,6 +409,144 @@ $recordsContext
             }
         } catch (e: Exception) {
             Log.e(TAG, "LifeLog generation exception", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 把一篇转写按话题切成多段，并标出匿名说话人、决定、开放问题和带来源的待办。
+     * 短录音由调用方直接落成一段，不必打到这里。
+     */
+    fun segmentTranscript(
+        baseUrl: String,
+        apiKey: String,
+        llmModel: String,
+        transcription: String,
+    ): Result<List<MemorySegment>> {
+        val clipped = if (transcription.length > 12000) {
+            transcription.take(12000) + "\n…（后文已截断）"
+        } else {
+            transcription
+        }
+        val system = """你把一段录音转写切成可回顾的记忆片段。只输出 JSON：
+{
+  "segments": [
+    {
+      "title": "10字内标题",
+      "summary": "这段在说什么，两句话以内",
+      "transcript": "这一段对应的原话，尽量保留原句",
+      "speakers": ["说话人 1", "说话人 2"],
+      "decisions": ["已经定下来的事，没有就空数组"],
+      "open_questions": ["没定下来的问题"],
+      "action_items": [{"text": "待办", "quote": "原话里的那一句", "when": "提到的时间，没有就空字符串"}]
+    }
+  ]
+}
+规则：
+1. 话题变了才新开一段。很短的独白只输出一段。
+2. 说话人只用「说话人 1」「说话人 2」这种匿名编号。分不清就都算说话人 1。不要编真人姓名。
+3. 没有说定的事不要写成 decisions。quote 必须能在原文里找到。
+4. 只输出 JSON。"""
+        val raw = completeChat(baseUrl, apiKey, llmModel, system, clipped, 0.1, jsonObject = true)
+        return raw.map { content ->
+            val parsed = MemorySegment.parse(content)
+            if (parsed.isEmpty()) throw IllegalStateException("没有切出片段")
+            parsed
+        }
+    }
+
+    fun askAcrossRecords(
+        baseUrl: String,
+        apiKey: String,
+        llmModel: String,
+        catalog: String,
+        question: String,
+    ): Result<MemoryAnswer> {
+        val system = """你根据用户自己的录音目录回答问题。只依据目录里写明的内容。
+输出 JSON：{"answer":"直接回答","record_ids":[用到的记录 id]}
+目录里没有的事就说没找到，record_ids 留空数组。不要编造。"""
+        val user = "【目录】\n$catalog\n\n【问题】\n$question"
+        return completeChat(baseUrl, apiKey, llmModel, system, user, 0.2, jsonObject = true).map { content ->
+            val parsed = MemorySegment.parseAnswer(content)
+            parsed ?: MemoryAnswer(content, emptyList())
+        }
+    }
+
+    fun meetingFollowUp(
+        baseUrl: String,
+        apiKey: String,
+        llmModel: String,
+        transcription: String,
+        title: String,
+    ): Result<String> {
+        val system = """你写一份会后跟进，只用录音里说过的话。输出 Markdown，按这个顺序，空的小节直接省略：
+## 决定
+## 我欠对方的
+## 对方欠我的
+## 开放问题
+每一条尽量带上原话。没定下来的不要写成决定。不要写开场白。"""
+        val user = "标题：$title\n\n$transcription"
+        return completeChat(baseUrl, apiKey, llmModel, system, user.take(12000), 0.2, jsonObject = false)
+    }
+
+    private fun completeChat(
+        baseUrl: String,
+        apiKey: String,
+        llmModel: String,
+        systemPrompt: String,
+        userContent: String,
+        temperature: Double,
+        jsonObject: Boolean,
+    ): Result<String> {
+        return try {
+            val url = "${normalizeBaseUrl(baseUrl)}/chat/completions"
+            val messages = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", userContent)
+                })
+            }
+            val requestJson = JSONObject().apply {
+                put("model", llmModel.ifBlank { "step-router-v1" })
+                put("messages", messages)
+                put("temperature", temperature)
+                if (jsonObject && (
+                        baseUrl.contains("stepfun", ignoreCase = true) ||
+                            baseUrl.contains("siliconflow", ignoreCase = true) ||
+                            baseUrl.contains("openai", ignoreCase = true)
+                        )
+                ) {
+                    put("response_format", JSONObject().put("type", "json_object"))
+                }
+            }.toString()
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post(requestJson.toRequestBody("application/json".toMediaType()))
+            if (apiKey.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $apiKey")
+            }
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val respStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Chat failed: $respStr")
+                    Result.failure(Exception("LLM 响应失败 (${response.code})"))
+                } else {
+                    val content = JSONObject(respStr)
+                        .optJSONArray("choices")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("message")
+                        ?.optString("content", "")
+                        .orEmpty()
+                    if (content.isBlank()) Result.failure(Exception("模型返回空内容"))
+                    else Result.success(content.trim())
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Chat error", e)
             Result.failure(e)
         }
     }

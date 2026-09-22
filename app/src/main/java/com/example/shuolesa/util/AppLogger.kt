@@ -130,7 +130,7 @@ object AppLogger {
         sb.appendLine("        说了啥 (ShuoLeSha) 系统运行与诊断报告        ")
         sb.appendLine("==================================================")
         sb.appendLine("• 导出时间: $nowStr")
-        sb.appendLine("• 应用版本: v3.0.5 (versionCode: 14)")
+        sb.appendLine("• 应用版本: v3.1.0 (versionCode: 16)")
         sb.appendLine("• 包名: ${context.packageName}")
         sb.appendLine()
 

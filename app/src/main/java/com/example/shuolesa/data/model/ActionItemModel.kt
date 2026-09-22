@@ -9,6 +9,8 @@ import org.json.JSONObject
 data class ActionItemModel(
     val text: String,
     val isDone: Boolean = false,
+    val quote: String? = null,
+    val whenHint: String? = null,
 ) {
     companion object {
         fun fromJsonString(jsonStr: String?): List<ActionItemModel> {
@@ -22,8 +24,10 @@ data class ActionItemModel(
                         is JSONObject -> {
                             val text = item.optString("text", item.optString("task", item.optString("title", ""))).trim()
                             val done = item.optBoolean("done", item.optBoolean("isDone", false))
+                            val quote = item.optString("quote", "").trim().ifBlank { null }
+                            val whenHint = item.optString("when", item.optString("whenHint", "")).trim().ifBlank { null }
                             if (text.isNotEmpty()) {
-                                list.add(ActionItemModel(text = text, isDone = done))
+                                list.add(ActionItemModel(text = text, isDone = done, quote = quote, whenHint = whenHint))
                             }
                         }
                         is String -> {
@@ -51,6 +55,8 @@ data class ActionItemModel(
                 val obj = JSONObject().apply {
                     put("text", item.text)
                     put("done", item.isDone)
+                    if (!item.quote.isNullOrBlank()) put("quote", item.quote)
+                    if (!item.whenHint.isNullOrBlank()) put("when", item.whenHint)
                 }
                 array.put(obj)
             }

@@ -24,6 +24,7 @@ data class AudioRecordEntity(
     val agentResult: String? = null,
     val recordingMode: String? = "lifelog",
     val audioFormat: String? = null,
+    val segmentsJson: String? = null,
 ) {
     companion object {
         const val STATUS_PENDING = "PENDING"

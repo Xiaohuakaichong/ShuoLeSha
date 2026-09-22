@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.model.ActionItemModel
 import com.example.shuolesa.data.model.LifeLogResult
+import com.example.shuolesa.data.model.MemorySegment
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
 import com.example.shuolesa.network.ApiService
@@ -303,12 +304,64 @@ fun LifeLogScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(Dimens.gapSm))
-        Text(
-            text = "当天片段请到「记录」按日期筛选。这里只做今天的复盘。",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextMuted,
-        )
+        if (dayRecords.isNotEmpty()) {
+            val meetingMs = dayRecords.filter { it.isMeeting() }.sumOf { it.durationMs }
+            val casualMs = dayRecords.filter { !it.isMeeting() }.sumOf { it.durationMs }
+            Spacer(modifier = Modifier.height(Dimens.gapMd))
+            Text("时间去向", style = MaterialTheme.typography.titleSmall, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.height(Dimens.gapXs))
+            Text(
+                text = "随身 ${Formatters.formatDuration(casualMs)} · 会议 ${Formatters.formatDuration(meetingMs)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+            )
+
+            val highlightRows = remember(dayRecords) {
+                dayRecords.sortedBy { it.createdAt }.flatMap { record ->
+                    val segments = MemorySegment.parse(record.segmentsJson)
+                    if (segments.isEmpty()) {
+                        listOf(record to (record.title ?: "一段录音") to (record.summary ?: ""))
+                    } else {
+                        segments.map { segment -> record to segment.title to segment.summary }
+                    }
+                }.take(8)
+            }
+            if (highlightRows.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(Dimens.gapMd))
+                Text("今天重点", style = MaterialTheme.typography.titleSmall, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(Dimens.gapSm))
+                highlightRows.forEach { (pair, summary) ->
+                    val (record, title) = pair
+                    TerminalCard {
+                        Column(modifier = Modifier.clickable { onRecordClick(record) }) {
+                            Text(title, style = MaterialTheme.typography.titleSmall, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                            if (summary.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(Dimens.gapXs))
+                                Text(summary, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 2)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                }
+            }
+
+            val openLoops = remember(dayRecords) {
+                dayRecords.flatMap { ActionItemModel.fromJsonString(it.actionItems) }.filter { !it.isDone }
+            }
+            if (openLoops.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(Dimens.gapSm))
+                Text("未完成约定", style = MaterialTheme.typography.titleSmall, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(Dimens.gapXs))
+                openLoops.take(6).forEach { item ->
+                    val extra = listOfNotNull(item.whenHint, item.quote).joinToString(" · ")
+                    Text(
+                        text = "· ${item.text}" + if (extra.isBlank()) "" else "（$extra）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                    )
+                }
+            }
+        }
 
         val dayTasks = remember(dayRecords) {
             dayRecords.sortedByDescending { it.createdAt }.flatMap { r ->

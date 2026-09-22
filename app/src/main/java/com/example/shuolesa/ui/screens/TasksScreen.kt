@@ -276,6 +276,16 @@ private fun TaskCard(
                     textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
                     modifier = Modifier.clickable(onClick = onToggle),
                 )
+                if (!entry.item.whenHint.isNullOrBlank() || !entry.item.quote.isNullOrBlank()) {
+                    val detail = listOfNotNull(entry.item.whenHint, entry.item.quote).joinToString(" · ")
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Spacer(modifier = Modifier.height(Dimens.gapXs))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

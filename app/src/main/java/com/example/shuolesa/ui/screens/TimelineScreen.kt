@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +30,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,16 +48,26 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.shuolesa.data.db.AudioRecordEntity
+import com.example.shuolesa.data.model.MemoryAnswer
+import com.example.shuolesa.data.model.MemorySegment
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
+import com.example.shuolesa.network.ApiService
 import com.example.shuolesa.network.UploadWorker
 import com.example.shuolesa.theme.Accent
 import com.example.shuolesa.theme.AccentOn
+import com.example.shuolesa.theme.CardElevated
 import com.example.shuolesa.theme.Dimens
 import com.example.shuolesa.theme.DangerRed
+import com.example.shuolesa.theme.SurfaceBorder
+import com.example.shuolesa.theme.TextMuted
+import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
 import com.example.shuolesa.ui.components.EmptyState
+import com.example.shuolesa.ui.components.FilterChip
 import com.example.shuolesa.ui.components.PageHeader
+import com.example.shuolesa.ui.components.TerminalCard
+import com.example.shuolesa.util.Formatters
 import com.example.shuolesa.ui.components.RecordFilter
 import com.example.shuolesa.ui.components.RecordFilterMenus
 import com.example.shuolesa.ui.components.TimelineItem
@@ -81,6 +95,11 @@ fun TimelineScreen(
     val lifelogTriggerDuration by prefs.lifelogTriggerDuration.collectAsState(initial = 2)
 
     var filter by remember { mutableStateOf(RecordFilter()) }
+    var query by remember { mutableStateOf("") }
+    var askMode by remember { mutableStateOf(false) }
+    var askScope by remember { mutableStateOf("今天") }
+    var asking by remember { mutableStateOf(false) }
+    var memoryAnswer by remember { mutableStateOf<MemoryAnswer?>(null) }
     var pendingDelete by remember { mutableStateOf<AudioRecordEntity?>(null) }
     var isImporting by remember { mutableStateOf(false) }
 
@@ -159,8 +178,58 @@ fun TimelineScreen(
         }
     }
 
-    val filteredRecords = remember(streamRecords, filter) {
-        streamRecords.filter { filter.matches(it) }
+    val filteredRecords = remember(streamRecords, filter, query, askMode) {
+        streamRecords.filter { filter.matches(it) }.filter { record ->
+            askMode || query.isBlank() || record.matchesText(query)
+        }
+    }
+
+    fun askMemory() {
+        val question = query.trim()
+        if (question.isEmpty() || asking) return
+        asking = true
+        memoryAnswer = null
+        scope.launch(Dispatchers.IO) {
+            try {
+                val now = System.currentTimeMillis()
+                val start = if (askScope == "今天") {
+                    Formatters.getStartOfDay(now)
+                } else {
+                    Formatters.getStartOfDay(now - 6 * 24 * 60 * 60 * 1000L)
+                }
+                val pool = streamRecords
+                    .filter { it.createdAt >= start && it.status == AudioRecordEntity.STATUS_UPLOADED }
+                    .sortedByDescending { it.createdAt }
+                    .take(24)
+                if (pool.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        memoryAnswer = MemoryAnswer("这段时间还没有转写完成的记录。", emptyList())
+                    }
+                    return@launch
+                }
+                val catalog = pool.joinToString("\n\n") { record ->
+                    val segmentTitles = MemorySegment.parse(record.segmentsJson).joinToString(" / ") { it.title }
+                    buildString {
+                        append("[#${record.id} ${Formatters.formatListDate(record.createdAt)}] ")
+                        append(record.title ?: "未命名")
+                        if (!record.summary.isNullOrBlank()) append("\n").append(record.summary!!.take(180))
+                        if (segmentTitles.isNotBlank()) append("\n片段：").append(segmentTitles)
+                    }
+                }
+                val result = ApiService().askAcrossRecords(
+                    baseUrl = prefs.getBaseUrlSync(),
+                    apiKey = prefs.getApiKeySync(),
+                    llmModel = prefs.getLlmModelSync(),
+                    catalog = catalog,
+                    question = question,
+                )
+                withContext(Dispatchers.Main) {
+                    memoryAnswer = result.getOrElse { MemoryAnswer("没问成：${it.message}", emptyList()) }
+                }
+            } finally {
+                withContext(Dispatchers.Main) { asking = false }
+            }
+        }
     }
 
     Column(
@@ -229,6 +298,66 @@ fun TimelineScreen(
             onChange = { filter = it },
         )
 
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
+        OutlinedTextField(
+            value = query,
+            onValueChange = {
+                query = it
+                if (!askMode) memoryAnswer = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = {
+                Text(if (askMode) "问自己的记录，比如上周说的上线日期" else "搜标题、摘要或原话", color = TextMuted)
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+                focusedBorderColor = Accent,
+                unfocusedBorderColor = SurfaceBorder,
+                cursorColor = Accent,
+                focusedContainerColor = CardElevated,
+                unfocusedContainerColor = CardElevated,
+            ),
+        )
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
+        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm)) {
+            FilterChip(label = "关键词", selected = !askMode, onClick = {
+                askMode = false
+                memoryAnswer = null
+            })
+            FilterChip(label = "问", selected = askMode, onClick = { askMode = true })
+            if (askMode) {
+                FilterChip(label = "今天", selected = askScope == "今天", onClick = { askScope = "今天" })
+                FilterChip(label = "近 7 天", selected = askScope == "近 7 天", onClick = { askScope = "近 7 天" })
+                FilterChip(
+                    label = if (asking) "在问" else "提问",
+                    selected = true,
+                    onClick = { askMemory() },
+                )
+            }
+        }
+        memoryAnswer?.let { answer ->
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+            TerminalCard {
+                Text(answer.answer, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                val cited = streamRecords.filter { it.id in answer.recordIds }
+                if (cited.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                    cited.forEach { record ->
+                        Text(
+                            text = record.title ?: "未命名",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Accent,
+                            modifier = Modifier
+                                .clickable { onRecordClick(record) }
+                                .padding(vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(Dimens.gapMd))
 
         if (allRecords == null) {
@@ -236,7 +365,11 @@ fun TimelineScreen(
         } else if (filteredRecords.isEmpty()) {
             EmptyTimeline(
                 hasAnyRecords = streamRecords.isNotEmpty(),
-                selectedFilter = if (filter.isDefault) "全部" else listOf(filter.dateLabel(), filter.mode, filter.status).filter { it != "全部" && it != "全部日期" && it != "类型" && it != "状态" }.joinToString(" · ").ifBlank { "当前筛选" },
+                selectedFilter = when {
+                    !askMode && query.isNotBlank() -> query.trim()
+                    filter.isDefault -> "全部"
+                    else -> listOf(filter.dateLabel(), filter.mode, filter.status).filter { it != "全部" && it != "全部日期" && it != "类型" && it != "状态" }.joinToString(" · ").ifBlank { "当前筛选" }
+                },
                 triggerSeconds = lifelogTriggerDuration,
                 onRetryFailed = {
                     scope.launch(Dispatchers.IO) {
@@ -294,6 +427,15 @@ fun TimelineScreen(
             },
         )
     }
+}
+
+private fun AudioRecordEntity.matchesText(query: String): Boolean {
+    val needle = query.trim()
+    if (needle.isEmpty()) return true
+    return title?.contains(needle, ignoreCase = true) == true ||
+        summary?.contains(needle, ignoreCase = true) == true ||
+        transcription?.contains(needle, ignoreCase = true) == true ||
+        segmentsJson?.contains(needle, ignoreCase = true) == true
 }
 
 @Composable

@@ -3,6 +3,7 @@ package com.example.shuolesa.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -76,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import com.example.shuolesa.audio.OpusPlayer
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.model.ActionItemModel
+import com.example.shuolesa.data.model.MemorySegment
 import com.example.shuolesa.data.model.PromptTemplate
 import com.example.shuolesa.data.prefs.AppPreferences
 import com.example.shuolesa.data.repository.AudioRepository
@@ -161,6 +163,8 @@ fun AudioPlayerScreen(
     var questionInput by remember { mutableStateOf("") }
     var aiAnswer by remember { mutableStateOf<String?>(null) }
     var isAskingAi by remember { mutableStateOf(false) }
+    var followUp by remember { mutableStateOf<String?>(null) }
+    var followUpLoading by remember { mutableStateOf(false) }
     var toolsExpanded by remember { mutableStateOf(false) }
     var metaExpanded by remember { mutableStateOf(false) }
 
@@ -213,6 +217,9 @@ fun AudioPlayerScreen(
     }
     val dialogueTurns = remember(currentRecord.transcription) {
         parseDialogueTurns(currentRecord.transcription ?: "")
+    }
+    val memorySegments = remember(currentRecord.segmentsJson) {
+        MemorySegment.parse(currentRecord.segmentsJson)
     }
 
     val copyMarkdown = {
@@ -284,6 +291,28 @@ fun AudioPlayerScreen(
                 } finally {
                     isRegenerating = false
                     regeneratingTemplateId = null
+                }
+            }
+        }
+    }
+
+    val runFollowUp = {
+        if (!followUpLoading && !isDigest) {
+            scope.launch(Dispatchers.IO) {
+                withContext(Dispatchers.Main) {
+                    followUpLoading = true
+                    followUp = null
+                }
+                val res = ApiService().meetingFollowUp(
+                    baseUrl = prefs?.getBaseUrlSync() ?: "",
+                    apiKey = prefs?.getApiKeySync() ?: "",
+                    llmModel = prefs?.getLlmModelSync() ?: "",
+                    transcription = currentRecord.transcription ?: currentRecord.summary ?: "",
+                    title = currentRecord.title ?: "这段录音",
+                )
+                withContext(Dispatchers.Main) {
+                    followUp = res.getOrElse { "跟进没写成：${it.message}" }
+                    followUpLoading = false
                 }
             }
         }
@@ -453,6 +482,43 @@ fun AudioPlayerScreen(
                 }
             }
 
+            if (memorySegments.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(Dimens.gapMd))
+                memorySegments.forEachIndexed { index, segment ->
+                    TerminalCard {
+                        Text(
+                            text = "${index + 1}. ${segment.title}",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (segment.speakers.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(Dimens.gapXs))
+                            Text(
+                                text = segment.speakers.joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted,
+                            )
+                        }
+                        if (segment.summary.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(Dimens.gapXs))
+                            Text(segment.summary, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        }
+                        if (segment.decisions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(Dimens.gapSm))
+                            Text("决定", style = MaterialTheme.typography.labelSmall, color = Accent, fontWeight = FontWeight.Bold)
+                            segment.decisions.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall, color = TextPrimary) }
+                        }
+                        if (segment.openQuestions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(Dimens.gapSm))
+                            Text("还没定", style = MaterialTheme.typography.labelSmall, color = ModeMeeting, fontWeight = FontWeight.Bold)
+                            segment.openQuestions.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall, color = TextPrimary) }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                }
+            }
+
             if (actionItems.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(Dimens.gapMd))
                 val completedCount = actionItems.count { it.isDone }
@@ -484,13 +550,19 @@ fun AudioPlayerScreen(
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = item.text,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    textDecoration = if (item.isDone) TextDecoration.LineThrough else null,
-                                ),
-                                color = if (item.isDone) TextMuted else TextPrimary,
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.text,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        textDecoration = if (item.isDone) TextDecoration.LineThrough else null,
+                                    ),
+                                    color = if (item.isDone) TextMuted else TextPrimary,
+                                )
+                                val detail = listOfNotNull(item.whenHint, item.quote).joinToString(" · ")
+                                if (detail.isNotBlank()) {
+                                    Text(detail, style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                }
+                            }
                         }
                     }
                 }
@@ -568,6 +640,37 @@ fun AudioPlayerScreen(
                 AnimatedVisibility(visible = toolsExpanded) {
                     Column(modifier = Modifier.padding(start = Dimens.cardPadding, end = Dimens.cardPadding, bottom = Dimens.cardPadding)) {
                         if (!isDigest) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("会后跟进", style = MaterialTheme.typography.titleSmall, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = if (followUpLoading) "在写" else "生成",
+                                color = Accent,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.clickable(enabled = !followUpLoading) { runFollowUp() },
+                            )
+                        }
+                        followUp?.let { markdown ->
+                            Spacer(modifier = Modifier.height(Dimens.gapSm))
+                            Text(markdown, style = MaterialTheme.typography.bodySmall, color = TextPrimary)
+                            Spacer(modifier = Modifier.height(Dimens.gapSm))
+                            Text(
+                                text = "导出 Markdown",
+                                color = Accent,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.clickable {
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, markdown)
+                                    }
+                                    context.startActivity(Intent.createChooser(send, "导出跟进"))
+                                },
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(Dimens.gapMd))
                         Text(
                             text = "按场景重新提炼",
                             style = MaterialTheme.typography.bodySmall,
