@@ -139,24 +139,18 @@ class ApiService {
     }
 
     /**
-     * 转写音频文件。
-     * 自动兼容阶跃星辰（自动路由至官方稳定 ASR 端点）、硅基流动及 OpenAI 兼容服务。
+     * 转写音频文件。走用户填写的 Base URL，这样 Step Plan 的 Credit 才能扣到套餐上。
      */
     fun transcribeAudio(baseUrl: String, apiKey: String, asrModel: String, audioFile: File): Result<String> {
         return transcribeOpenAiMultipart(baseUrl, apiKey, asrModel, audioFile)
     }
 
     /**
-     * 标准 OpenAI Multipart ASR 协议：POST /audio/transcriptions
+     * 标准 OpenAI Multipart ASR 协议：POST {baseUrl}/audio/transcriptions
      */
     private fun transcribeOpenAiMultipart(baseUrl: String, apiKey: String, asrModel: String, audioFile: File): Result<String> {
         return try {
-            val url = if (baseUrl.contains("stepfun", ignoreCase = true)) {
-                // 阶跃星辰语音识别官方稳定端点
-                "https://api.stepfun.com/v1/audio/transcriptions"
-            } else {
-                "${normalizeBaseUrl(baseUrl)}/audio/transcriptions"
-            }
+            val url = "${normalizeBaseUrl(baseUrl)}/audio/transcriptions"
 
             val mediaType = when {
                 audioFile.name.endsWith(".wav", ignoreCase = true) -> "audio/wav".toMediaType()
