@@ -1054,7 +1054,7 @@ private fun AboutSettingsContent(
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v3.1.2",
+                    text = "v3.1.3",
                     style = MaterialTheme.typography.labelSmall,
                     color = Accent,
                     fontWeight = FontWeight.Bold,

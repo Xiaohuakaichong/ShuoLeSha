@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,7 +72,6 @@ import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.TextPrimary
 import com.example.shuolesa.theme.TextSecondary
 import com.example.shuolesa.ui.components.EmptyState
-import com.example.shuolesa.ui.components.FilterChip
 import com.example.shuolesa.ui.components.PageHeader
 import com.example.shuolesa.ui.components.TerminalCard
 import com.example.shuolesa.util.Formatters
@@ -303,6 +306,15 @@ fun TimelineScreen(
         )
 
         Spacer(modifier = Modifier.height(Dimens.gapSm))
+        SearchModeToggle(
+            askMode = askMode,
+            onKeyword = {
+                askMode = false
+                memoryAnswer = null
+            },
+            onAsk = { askMode = true },
+        )
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
         OutlinedTextField(
             value = query,
             onValueChange = {
@@ -314,6 +326,10 @@ fun TimelineScreen(
             placeholder = {
                 Text(if (askMode) "问自己的记录，比如上周说的上线日期" else "搜标题、摘要或原话", color = TextMuted)
             },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = { if (askMode) askMemory() },
+            ),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = TextPrimary,
                 unfocusedTextColor = TextPrimary,
@@ -324,21 +340,36 @@ fun TimelineScreen(
                 unfocusedContainerColor = CardElevated,
             ),
         )
-        Spacer(modifier = Modifier.height(Dimens.gapSm))
-        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.gapSm)) {
-            FilterChip(label = "关键词", selected = !askMode, onClick = {
-                askMode = false
-                memoryAnswer = null
-            })
-            FilterChip(label = "问", selected = askMode, onClick = { askMode = true })
-            if (askMode) {
-                FilterChip(label = "今天", selected = askScope == "今天", onClick = { askScope = "今天" })
-                FilterChip(label = "近 7 天", selected = askScope == "近 7 天", onClick = { askScope = "近 7 天" })
-                FilterChip(
-                    label = if (asking) "在问" else "提问",
-                    selected = true,
-                    onClick = { askMemory() },
+        if (askMode) {
+            Spacer(modifier = Modifier.height(Dimens.gapSm))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "范围",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted,
                 )
+                Spacer(modifier = Modifier.size(Dimens.gapSm))
+                AskScopeChip(label = "今天", selected = askScope == "今天", onClick = { askScope = "今天" })
+                Spacer(modifier = Modifier.size(6.dp))
+                AskScopeChip(label = "近 7 天", selected = askScope == "近 7 天", onClick = { askScope = "近 7 天" })
+                Spacer(modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Dimens.chipRadius))
+                        .background(if (asking) Accent.copy(alpha = 0.45f) else Accent)
+                        .clickable(enabled = !asking) { askMemory() }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text = if (asking) "在问" else "提问",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AccentOn,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
         memoryAnswer?.let { answer ->
@@ -443,6 +474,65 @@ fun TimelineScreen(
             },
         )
     }
+}
+
+@Composable
+private fun SearchModeToggle(
+    askMode: Boolean,
+    onKeyword: () -> Unit,
+    onAsk: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(Dimens.chipRadius))
+            .background(CardElevated)
+            .border(Dimens.borderThin, SurfaceBorder, RoundedCornerShape(Dimens.chipRadius)),
+    ) {
+        SearchModeSegment("关键词", selected = !askMode, onClick = onKeyword)
+        SearchModeSegment("问", selected = askMode, onClick = onAsk)
+    }
+}
+
+@Composable
+private fun SearchModeSegment(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(Dimens.chipRadius))
+            .background(if (selected) Accent else androidx.compose.ui.graphics.Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) AccentOn else TextSecondary,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun AskScopeChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (selected) Accent else TextMuted,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        modifier = Modifier
+            .clip(RoundedCornerShape(Dimens.chipRadius))
+            .background(if (selected) Accent.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
 }
 
 private fun AudioRecordEntity.matchesText(query: String): Boolean {
