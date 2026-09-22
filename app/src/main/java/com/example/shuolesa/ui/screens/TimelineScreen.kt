@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,9 +45,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.shuolesa.R
 import com.example.shuolesa.data.db.AudioRecordEntity
 import com.example.shuolesa.data.model.MemoryAnswer
 import com.example.shuolesa.data.model.MemorySegment
@@ -340,6 +344,18 @@ fun TimelineScreen(
         memoryAnswer?.let { answer ->
             Spacer(modifier = Modifier.height(Dimens.gapSm))
             TerminalCard {
+                if (answer.recordIds.isNotEmpty()) {
+                    Image(
+                        painter = painterResource(R.drawable.mascot_found),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp),
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.BottomCenter,
+                    )
+                    Spacer(modifier = Modifier.height(Dimens.gapSm))
+                }
                 Text(answer.answer, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                 val cited = streamRecords.filter { it.id in answer.recordIds }
                 if (cited.isNotEmpty()) {
@@ -460,6 +476,7 @@ private fun EmptyTimeline(
             symbol = "",
             title = title,
             subtitle = subtitle,
+            imageRes = R.drawable.mascot_empty,
         )
 
         if (selectedFilter == "失败" && hasAnyRecords) {

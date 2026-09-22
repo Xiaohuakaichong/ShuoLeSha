@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -30,19 +31,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.shuolesa.R
 import com.example.shuolesa.service.AudioCaptureService
 import com.example.shuolesa.theme.DangerRed
 import com.example.shuolesa.theme.Dimens
 import com.example.shuolesa.theme.TextMuted
 import com.example.shuolesa.theme.modeColor
 import com.example.shuolesa.ui.components.PageHeader
-import com.example.shuolesa.ui.components.PulsingDot
 import com.example.shuolesa.ui.components.TerminalOutlineButton
 import com.example.shuolesa.util.Formatters
 import kotlinx.coroutines.delay
@@ -105,7 +108,15 @@ fun ActiveRecordingScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        PulsingDot(size = 180, color = accent)
+        Image(
+            painter = painterResource(R.drawable.mascot_listening),
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp),
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.BottomCenter,
+        )
 
         Spacer(modifier = Modifier.height(Dimens.gapXl))
 
