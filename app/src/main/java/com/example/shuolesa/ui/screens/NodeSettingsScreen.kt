@@ -805,6 +805,13 @@ private fun AiEngineSettingsContent(
     onResetPrompt: () -> Unit,
     onPing: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    var remoteModels by remember { mutableStateOf<List<String>?>(null) }
+    var fetchingModels by remember { mutableStateOf(false) }
+    var modelListMessage by remember { mutableStateOf<String?>(null) }
+    val fallbackAsr = listOf("stepaudio-2.5-asr", "FunAudioLLM/SenseVoiceSmall", "whisper-1")
+    val fallbackLlm = listOf("step-router-v1", "step-1-8k", "step-2-16k", "deepseek-ai/DeepSeek-V3")
+
     SectionLabel("AI 提供商预设")
     Spacer(modifier = Modifier.height(Dimens.gapSm))
     Row(
@@ -863,6 +870,38 @@ private fun AiEngineSettingsContent(
         },
     )
 
+    Spacer(modifier = Modifier.height(Dimens.gapMd))
+    TerminalOutlineButton(
+        text = if (fetchingModels) "正在拉取" else "拉取模型列表",
+        onClick = {
+            if (fetchingModels) return@TerminalOutlineButton
+            fetchingModels = true
+            modelListMessage = null
+            scope.launch(Dispatchers.IO) {
+                val result = ApiService().listModels(baseUrl, apiKey)
+                withContext(Dispatchers.Main) {
+                    fetchingModels = false
+                    result.fold(
+                        onSuccess = { ids ->
+                            remoteModels = ids
+                            modelListMessage = "拉到 ${ids.size} 个。接口不区分转写和整理，点芯片填进对应输入框。"
+                        },
+                        onFailure = { error ->
+                            modelListMessage = error.message ?: "拉取失败"
+                        },
+                    )
+                }
+            }
+        },
+        enabled = !fetchingModels,
+        loading = fetchingModels,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    modelListMessage?.let { message ->
+        Spacer(modifier = Modifier.height(Dimens.gapSm))
+        Text(text = message, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+    }
+
     Spacer(modifier = Modifier.height(Dimens.gapLg))
 
     SectionLabel("语音转写模型 (ASR)")
@@ -873,20 +912,11 @@ private fun AiEngineSettingsContent(
         placeholder = "stepaudio-2.5-asr",
     )
     Spacer(modifier = Modifier.height(6.dp))
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        val asrSuggestions = listOf("stepaudio-2.5-asr", "FunAudioLLM/SenseVoiceSmall", "whisper-1")
-        items(asrSuggestions) { suggestion ->
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(CardElevated)
-                    .clickable { onSetAsrModel(suggestion) }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(text = suggestion, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            }
-        }
-    }
+    ModelSuggestionRow(
+        suggestions = remoteModels ?: fallbackAsr,
+        selected = asrModel,
+        onPick = onSetAsrModel,
+    )
 
     Spacer(modifier = Modifier.height(Dimens.gapLg))
 
@@ -895,23 +925,14 @@ private fun AiEngineSettingsContent(
     TerminalTextField(
         value = llmModel,
         onValueChange = onSetLlmModel,
-        placeholder = "step-1-8k",
+        placeholder = "step-5-preview",
     )
     Spacer(modifier = Modifier.height(6.dp))
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        val llmSuggestions = listOf("step-router-v1", "step-1-8k", "step-2-16k", "deepseek-ai/DeepSeek-V3")
-        items(llmSuggestions) { suggestion ->
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(CardElevated)
-                    .clickable { onSetLlmModel(suggestion) }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(text = suggestion, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            }
-        }
-    }
+    ModelSuggestionRow(
+        suggestions = remoteModels ?: fallbackLlm,
+        selected = llmModel,
+        onPick = onSetLlmModel,
+    )
 
     Spacer(modifier = Modifier.height(Dimens.gapLg))
 
@@ -1033,7 +1054,7 @@ private fun AboutSettingsContent(
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 Text(
-                    text = "v3.1.0",
+                    text = "v3.1.1",
                     style = MaterialTheme.typography.labelSmall,
                     color = Accent,
                     fontWeight = FontWeight.Bold,
@@ -1228,6 +1249,33 @@ private fun PermissionStatusRow(
                 color = if (isGranted) StatusUploaded else DangerRed,
                 fontWeight = FontWeight.SemiBold,
             )
+        }
+    }
+}
+
+@Composable
+private fun ModelSuggestionRow(
+    suggestions: List<String>,
+    selected: String,
+    onPick: (String) -> Unit,
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(suggestions, key = { it }) { suggestion ->
+            val picked = suggestion == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (picked) Accent.copy(alpha = 0.16f) else CardElevated)
+                    .clickable { onPick(suggestion) }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = suggestion,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (picked) Accent else TextSecondary,
+                    fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
         }
     }
 }

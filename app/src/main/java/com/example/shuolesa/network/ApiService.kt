@@ -99,6 +99,46 @@ class ApiService {
     }
 
     /**
+     * OpenAI 兼容的模型目录：GET {baseUrl}/models。
+     * 只返回 id，不区分转写和整理。
+     */
+    fun listModels(baseUrl: String, apiKey: String): Result<List<String>> {
+        return try {
+            val url = "${normalizeBaseUrl(baseUrl)}/models"
+            val requestBuilder = Request.Builder().url(url).get()
+            if (apiKey.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $apiKey")
+            }
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val message = when (response.code) {
+                        401 -> "API Key 无效 (401)"
+                        404 -> "这个地址没有模型列表 (404)"
+                        else -> "拉取失败 (${response.code})"
+                    }
+                    return Result.failure(Exception(message))
+                }
+                val data = try {
+                    JSONObject(body).optJSONArray("data")
+                } catch (_: Exception) {
+                    null
+                } ?: return Result.failure(Exception("返回里没有模型列表"))
+                val ids = buildList {
+                    for (i in 0 until data.length()) {
+                        val id = data.optJSONObject(i)?.optString("id").orEmpty().trim()
+                        if (id.isNotEmpty()) add(id)
+                    }
+                }.distinct().sorted()
+                if (ids.isEmpty()) Result.failure(Exception("模型列表是空的")) else Result.success(ids)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "List models failed", e)
+            Result.failure(Exception("拉取失败: ${e.localizedMessage ?: e.message}"))
+        }
+    }
+
+    /**
      * 转写音频文件。
      * 自动兼容阶跃星辰（自动路由至官方稳定 ASR 端点）、硅基流动及 OpenAI 兼容服务。
      */
