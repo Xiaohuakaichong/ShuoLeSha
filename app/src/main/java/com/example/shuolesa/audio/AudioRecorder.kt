@@ -6,98 +6,60 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import java.io.IOException
 
-/**
- * PCM audio capture at 16kHz mono using AudioRecord.
- * Feeds raw PCM frames to a callback for encoding.
- */
+/** One owner consumes PCM. stop() unblocks the native read; release follows join(). */
 class AudioRecorder {
-
     companion object {
         const val SAMPLE_RATE = 16000
+        const val FRAME_SIZE = 960
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        const val FRAME_SIZE = 960 // 60ms at 16kHz (Opus optimal frame)
     }
-
-    interface PcmCallback {
-        fun onPcmData(buffer: ShortArray, readCount: Int)
-    }
-
-    private var audioRecord: AudioRecord? = null
-    @Volatile
-    private var isRecording = false
-    @Volatile
-    private var isPaused = false
-
-    val recording: Boolean get() = isRecording
-    val paused: Boolean get() = isPaused
+    private var record: AudioRecord? = null
+    @Volatile private var stopping = false
+    private var started = false
 
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun init(): Boolean {
-        val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-        if (bufferSize == AudioRecord.ERROR_BAD_VALUE || bufferSize == AudioRecord.ERROR) {
-            return false
-        }
-
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT,
-            maxOf(bufferSize, FRAME_SIZE * 2 * 4) // at least 4 frames buffer
-        )
-        return audioRecord?.state == AudioRecord.STATE_INITIALIZED
+        val size = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        if (size <= 0) return false
+        record = AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_CONFIG,
+            AUDIO_FORMAT, maxOf(size, FRAME_SIZE * 8))
+        return record?.state == AudioRecord.STATE_INITIALIZED
     }
-
-    /**
-     * Start recording in a coroutine. Blocks until stopped.
-     */
+    @Synchronized private fun startNative(): Boolean {
+        if (stopping) return false
+        record?.startRecording() ?: return false
+        started = true
+        return true
+    }
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    suspend fun startRecording(callback: PcmCallback) = withContext(Dispatchers.IO) {
-        val record = audioRecord ?: return@withContext
-        val buffer = ShortArray(FRAME_SIZE)
-
-        record.startRecording()
-        isRecording = true
-        isPaused = false
-
+    suspend fun capture(onFrame: suspend (ShortArray, Int) -> Unit) = withContext(Dispatchers.IO) {
+        val native = record ?: throw IOException("麦克风尚未初始化")
+        if (!startNative()) return@withContext
+        val pcm = ShortArray(FRAME_SIZE)
         try {
-            while (isActive && isRecording) {
-                if (isPaused) {
-                    Thread.sleep(50)
-                    continue
-                }
-                val readCount = record.read(buffer, 0, FRAME_SIZE)
-                if (readCount > 0) {
-                    callback.onPcmData(buffer, readCount)
-                }
+            while (currentCoroutineContext().isActive && !stopping) {
+                val count = native.read(pcm, 0, pcm.size, AudioRecord.READ_NON_BLOCKING)
+                if (count > 0) onFrame(pcm, count)
+                else if (!stopping && count < 0) throw IOException("麦克风采集中断 ($count)")
+                else if(count==0) delay(10)
             }
-        } finally {
-            try {
-                record.stop()
-            } catch (_: IllegalStateException) { }
-        }
+        } finally { stop() }
     }
-
-    fun pause() {
-        isPaused = true
+    @Synchronized fun stop() {
+        stopping = true
+        if (started) runCatching { record?.stop() }
+        started = false
     }
-
-    fun resume() {
-        isPaused = false
-    }
-
-    fun stop() {
-        isRecording = false
-        isPaused = false
-    }
-
-    fun release() {
+    @Synchronized fun release() {
         stop()
-        audioRecord?.release()
-        audioRecord = null
+        record?.release()
+        record = null
     }
 }

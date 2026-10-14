@@ -41,7 +41,7 @@ class NotificationHelper(private val context: Context) {
         manager.createNotificationChannel(channel)
     }
 
-    fun buildRecordingNotification(startedAt: Long, modeTitle: String): Notification {
+    fun buildRecordingNotification(startedAt: Long, modeTitle: String, paused:Boolean=false): Notification {
         val contentIntent = PendingIntent.getActivity(
             context,
             0,
@@ -61,31 +61,35 @@ class NotificationHelper(private val context: Context) {
         )
 
         val label = modeTitle.ifBlank { "录音" }
+        val toggle=PendingIntent.getService(context,2,Intent(context,AudioCaptureService::class.java).apply {
+            action=if(paused) AudioCaptureService.ACTION_RESUME else AudioCaptureService.ACTION_PAUSE
+        },PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("说了啥 · $label")
-            .setContentText("正在听")
+            .setContentText(if(paused) "已暂停" else "正在听")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("正在听。点按回到应用，或在这里停止。"),
+                    .bigText(if(paused) "录音已暂停。可继续录音或停止并保存。" else "正在录音。可暂停、停止，或回到应用查看。"),
             )
             .setSmallIcon(R.drawable.ic_mic)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setWhen(startedAt)
-            .setShowWhen(true)
-            .setUsesChronometer(true)
+            .setShowWhen(!paused)
+            .setUsesChronometer(!paused)
             .setShortCriticalText(label)
             .setRequestPromotedOngoing(true)
             .setContentIntent(contentIntent)
+            .addAction(R.drawable.ic_mic,if(paused) "继续" else "暂停",toggle)
             .addAction(R.drawable.ic_stop, "停止", stopIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
-    fun updateRecording(startedAt: Long, modeTitle: String) {
+    fun updateRecording(startedAt: Long, modeTitle: String,paused:Boolean=false) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildRecordingNotification(startedAt, modeTitle))
+        manager.notify(NOTIFICATION_ID, buildRecordingNotification(startedAt, modeTitle,paused))
     }
 }

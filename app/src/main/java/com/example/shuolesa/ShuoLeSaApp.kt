@@ -6,5 +6,6 @@ class ShuoLeSaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         com.example.shuolesa.util.AppLogger.init(this)
+        AppContainer.from(this)
     }
 }

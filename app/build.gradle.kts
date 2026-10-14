@@ -12,8 +12,9 @@ android {
         applicationId = "com.example.shuolesa"
         minSdk = 29
         targetSdk = 36
-        versionCode = 22
-        versionName = "3.1.6"
+        versionCode = 23
+        versionName = "4.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -29,15 +30,20 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      buildConfig = true
       shaders = false
     }
+    testOptions { unitTests.isIncludeAndroidResources = true }
 
     packaging {
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
       }
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 kotlin {
@@ -73,6 +79,12 @@ dependencies {
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation("org.json:json:20240303")
+  testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+  testImplementation("org.robolectric:robolectric:4.16.1")
+  testImplementation("androidx.room:room-testing:2.7.1")
+  testImplementation(libs.androidx.test.core)
+  testImplementation(libs.androidx.compose.ui.test.junit4)
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)

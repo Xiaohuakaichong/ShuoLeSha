@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -60,7 +61,7 @@ class OpusPlayer(private val context: Context) {
     private var seekTargetMs = -1L
 
     private val indexList = mutableListOf<OpusPacketIndex>()
-    private var fileBytes = ByteArray(0)
+    private var sourceFile:File?=null
     private var durationMs = 0L
 
     var onProgressUpdate: ((Long) -> Unit)? = null
@@ -75,7 +76,7 @@ class OpusPlayer(private val context: Context) {
                 return false
             }
 
-            val isStandardMedia = filePath.endsWith(".wav", ignoreCase = true) ||
+            val isStandardMedia = !filePath.endsWith(".opus",ignoreCase=true) || filePath.endsWith(".wav", ignoreCase = true) ||
                 filePath.endsWith(".mp3", ignoreCase = true) ||
                 filePath.endsWith(".m4a", ignoreCase = true) ||
                 filePath.endsWith(".aac", ignoreCase = true) ||
@@ -86,7 +87,7 @@ class OpusPlayer(private val context: Context) {
                     if (file.length() >= 4) {
                         val header = ByteArray(4)
                         file.inputStream().use { it.read(header) }
-                        header.contentEquals("RIFF".toByteArray())
+                        header.contentEquals("RIFF".toByteArray()) || header.contentEquals("OggS".toByteArray())
                     } else false
                 }
 
@@ -116,21 +117,20 @@ class OpusPlayer(private val context: Context) {
             }
 
             isWavFormat = false
-            fileBytes = file.readBytes()
+            sourceFile=file
             indexList.clear()
-
-            val buffer = ByteBuffer.wrap(fileBytes).order(ByteOrder.LITTLE_ENDIAN)
             var currentTimeMs = 0L
-            while (buffer.remaining() >= 4) {
-                val size = buffer.getInt()
-                if (size <= 0 || buffer.remaining() < size) {
+            RandomAccessFile(file,"r").use { input -> while(input.filePointer+4<=input.length()) {
+                val size=Integer.reverseBytes(input.readInt())
+                if (size <= 0 || size>65536 || input.length()-input.filePointer < size) {
                     break
                 }
-                val offset = buffer.position().toLong()
+                val offset = input.filePointer
                 indexList.add(OpusPacketIndex(offset, size, currentTimeMs))
-                buffer.position(buffer.position() + size)
+                input.seek(offset+size)
                 currentTimeMs += 20 // 20ms per Opus packet
-            }
+            } }
+            if(indexList.isEmpty()) {onError?.invoke("不支持的旧版音频格式");return false}
 
             durationMs = currentTimeMs
             currentPositionMs = 0L
@@ -241,8 +241,9 @@ class OpusPlayer(private val context: Context) {
             return
         }
         playThread?.interrupt()
+        runCatching {audioTrack?.pause();audioTrack?.flush()}
         try {
-            playThread?.join(500)
+            playThread?.join(2500)
         } catch (_: Exception) {}
         playThread = null
         releaseResources()
@@ -273,6 +274,7 @@ class OpusPlayer(private val context: Context) {
     }
 
     private fun runPlayerLoop() {
+        val input=sourceFile?.let {RandomAccessFile(it,"r")} ?: return
         try {
             val format = MediaFormat.createAudioFormat("audio/opus", SAMPLE_RATE, 1)
             val csd0 = byteArrayOf(
@@ -332,7 +334,9 @@ class OpusPlayer(private val context: Context) {
                         if (inputBuffer != null) {
                             inputBuffer.clear()
                             val packet = indexList[packetPointer]
-                            inputBuffer.put(fileBytes, packet.fileOffset.toInt(), packet.packetSize)
+                            val data=ByteArray(packet.packetSize)
+                            input.seek(packet.fileOffset);input.readFully(data)
+                            inputBuffer.put(data)
                             dec.queueInputBuffer(inputIndex, 0, packet.packetSize, packet.timeMs * 1000L, 0)
                             packetPointer++
                             hasWork = true
@@ -414,6 +418,7 @@ class OpusPlayer(private val context: Context) {
             Log.e(TAG, "Error in player loop", e)
             onError?.invoke("播放异常: ${e.message}")
         } finally {
+            input.close()
             releaseResources()
         }
     }

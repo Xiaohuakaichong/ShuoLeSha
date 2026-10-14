@@ -2,6 +2,7 @@ package com.example.shuolesa.data.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity(tableName = "audio_records")
 data class AudioRecordEntity(
@@ -22,9 +23,11 @@ data class AudioRecordEntity(
     val tags: String? = null,
     val transcription: String? = null,
     val agentResult: String? = null,
-    val recordingMode: String? = "lifelog",
+    @ColumnInfo(defaultValue = "'lifelog'") val recordingMode: String? = "lifelog",
     val audioFormat: String? = null,
     val segmentsJson: String? = null,
+    val sourceStartMs: Long? = null,
+    val sourceEndMs: Long? = null,
 ) {
     companion object {
         const val STATUS_PENDING = "PENDING"

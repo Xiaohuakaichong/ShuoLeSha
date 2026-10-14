@@ -3,173 +3,152 @@ package com.example.shuolesa.audio
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
-import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * 将 16kHz PCM 数据实时编码为带 ADTS 头的标准 AAC 音频文件 (.aac)。
- * 纯硬件级编码，体积极小（16kbps~32kbps 相比无损 WAV 缩减 85%~94%），
- * 兼容 StepFun、SiliconFlow、Whisper 及全平台播放器。
- */
-class AacWriter(
-    val file: File,
-    private val sampleRate: Int = 16000,
-    private val bitRate: Int = 24000,
-) {
-
-    companion object {
-        private const val TAG = "AacWriter"
-        private const val MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC
-        private const val TIMEOUT_US = 8000L
-        private const val ADTS_HEADER_SIZE = 7
-    }
-
-    private var codec: MediaCodec? = null
-    private var outputStream: FileOutputStream? = null
-    private var isInitialized = false
-    private var presentationTimeUs = 0L
-
+/** ADTS AAC. Every wait has a deadline, including submission and draining of EOS. */
+class AacWriter internal constructor(val file: File, private val sampleRate: Int = 16000, private val bitRate: Int = 24000,
+    private val codecFactory:()->AacEncoderPort={AndroidAacEncoder(sampleRate,bitRate)},private val now:()->Long=System::nanoTime) {
+    private val stream = FileOutputStream(file)
+    private var codec: AacEncoderPort? = null
+    private var timeUs = 0L
+    private var finished = false
     init {
         try {
-            outputStream = FileOutputStream(file)
-            val format = MediaFormat.createAudioFormat(MIME_TYPE, sampleRate, 1).apply {
-                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-                setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
-                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 8192)
-            }
-            val mediaCodec = MediaCodec.createEncoderByType(MIME_TYPE)
-            mediaCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            mediaCodec.start()
-            codec = mediaCodec
-            isInitialized = true
+            codec=codecFactory()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize AAC encoder", e)
-            isInitialized = false
+            runCatching { codec?.release() }; stream.close()
+            throw IOException("无法初始化录音编码器",e)
         }
     }
-
-    /**
-     * 写入 PCM 采样数据
-     */
-    fun write(pcmData: ShortArray, count: Int) {
-        val mediaCodec = codec ?: return
-        if (!isInitialized) return
-
-        try {
-            val byteCount = count * 2
-            val byteBuffer = ByteBuffer.allocate(byteCount).order(ByteOrder.LITTLE_ENDIAN)
-            byteBuffer.asShortBuffer().put(pcmData, 0, count)
-            val bytes = byteBuffer.array()
-
-            var bytesOffset = 0
-            while (bytesOffset < bytes.size) {
-                val inputIndex = mediaCodec.dequeueInputBuffer(TIMEOUT_US)
-                if (inputIndex >= 0) {
-                    val inputBuf = mediaCodec.getInputBuffer(inputIndex) ?: break
-                    inputBuf.clear()
-                    val toCopy = minOf(bytes.size - bytesOffset, inputBuf.remaining())
-                    inputBuf.put(bytes, bytesOffset, toCopy)
-                    bytesOffset += toCopy
-
-                    val durationUs = (toCopy / 2 * 1_000_000L) / sampleRate
-                    mediaCodec.queueInputBuffer(inputIndex, 0, toCopy, presentationTimeUs, 0)
-                    presentationTimeUs += durationUs
-                }
-                drainOutput(false)
+    fun write(pcm: ShortArray, count: Int, offset: Int = 0) {
+        check(!finished)
+        val native = codec ?: throw IOException("编码器已关闭")
+        val bytes = ByteBuffer.allocate(count*2).order(ByteOrder.LITTLE_ENDIAN).apply {
+            asShortBuffer().put(pcm,offset,count)
+        }.array()
+        var cursor=0
+        val deadline=now()+2_000_000_000L
+        while(cursor<bytes.size) {
+            if(now()>deadline) throw IOException("录音编码超时，已保留已写入部分")
+            val index=native.dequeueInputBuffer(10_000)
+            if(index>=0) {
+                val input=native.getInputBuffer(index) ?: throw IOException("编码输入缓冲不可用")
+                input.clear()
+                val size=minOf(input.remaining(),bytes.size-cursor)
+                input.put(bytes,cursor,size)
+                native.queueInputBuffer(index,0,size,timeUs,0)
+                timeUs+=(size/2)*1_000_000L/sampleRate
+                cursor+=size
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error encoding PCM frame to AAC", e)
+            drain(false,deadline)
         }
     }
-
-    private fun drainOutput(isEndOfStream: Boolean) {
-        val mediaCodec = codec ?: return
-        val outStream = outputStream ?: return
-        val bufferInfo = MediaCodec.BufferInfo()
-
-        while (true) {
-            val outputIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-            if (outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                if (!isEndOfStream) break
-            } else if (outputIndex >= 0) {
-                val outputBuf = mediaCodec.getOutputBuffer(outputIndex)
-                if (outputBuf != null && bufferInfo.size > 0 && (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
-                    val packetLen = bufferInfo.size + ADTS_HEADER_SIZE
-                    val packet = ByteArray(packetLen)
-                    addAdtsHeader(packet, packetLen, sampleRate, 1)
-
-                    outputBuf.position(bufferInfo.offset)
-                    outputBuf.limit(bufferInfo.offset + bufferInfo.size)
-                    outputBuf.get(packet, ADTS_HEADER_SIZE, bufferInfo.size)
-
-                    outStream.write(packet)
+    private fun drain(end: Boolean, deadline: Long): Boolean {
+        val native=codec ?: return false
+        val info=MediaCodec.BufferInfo()
+        while(now()<deadline) {
+            val index=native.dequeueOutputBuffer(info,10_000)
+            if(index==MediaCodec.INFO_TRY_AGAIN_LATER && !end) return false
+            if(index>=0) {
+                val buffer=native.getOutputBuffer(index)
+                if(buffer!=null && info.size>0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                    val packet=ByteArray(info.size+7)
+                    val length=packet.size
+                    // MPEG-4 AAC-LC, 16kHz, mono, no CRC.
+                    val frequency=when(sampleRate) { 16000->8; 44100->4; 48000->3; else->8 }
+                    packet[0]=0xFF.toByte(); packet[1]=0xF1.toByte()
+                    packet[2]=((1 shl 6) or (frequency shl 2)).toByte()
+                    packet[3]=((1 shl 6) or (length shr 11)).toByte()
+                    packet[4]=((length and 0x7FF) shr 3).toByte()
+                    packet[5]=(((length and 7) shl 5) or 0x1F).toByte(); packet[6]=0xFC.toByte()
+                    buffer.position(info.offset); buffer.limit(info.offset+info.size)
+                    buffer.get(packet,7,info.size); stream.write(packet)
                 }
-                mediaCodec.releaseOutputBuffer(outputIndex, false)
-                if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                    break
-                }
+                native.releaseOutputBuffer(index,false)
+                if(info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return true
             }
         }
+        if(end) throw IOException("编码结束等待超时，已保留可恢复音频")
+        return false
     }
-
-    /**
-     * 为 AAC 裸流数据包构建 7 字节 ADTS 头
-     */
-    private fun addAdtsHeader(packet: ByteArray, packetLen: Int, sampleRate: Int, channels: Int) {
-        val profile = 2 // AAC-LC (2)
-        val freqIdx = when (sampleRate) {
-            96000 -> 0
-            88200 -> 1
-            64000 -> 2
-            48000 -> 3
-            44100 -> 4
-            32000 -> 5
-            24000 -> 6
-            22050 -> 7
-            16000 -> 8
-            12000 -> 9
-            11025 -> 10
-            8000 -> 11
-            else -> 8
-        }
-        val chanCfg = channels // 1
-
-        packet[0] = 0xFF.toByte()
-        packet[1] = 0xF9.toByte() // 0xFFF + MPEG-4 (0) + Layer 00 + No CRC (1)
-        packet[2] = (((profile - 1) shl 6) + (freqIdx shl 2) + (chanCfg shr 2)).toByte()
-        packet[3] = (((chanCfg and 3) shl 6) + (packetLen shr 11)).toByte()
-        packet[4] = ((packetLen and 0x7FF) shr 3).toByte()
-        packet[5] = (((packetLen and 7) shl 5) + 0x1F).toByte()
-        packet[6] = 0xFC.toByte()
-    }
-
-    /**
-     * 结束编码并关闭文件
-     */
     fun finish(): Long {
+        if(finished) return file.length()
+        finished=true
+        val native=codec
         try {
-            codec?.let { mediaCodec ->
-                val inputIndex = mediaCodec.dequeueInputBuffer(TIMEOUT_US)
-                if (inputIndex >= 0) {
-                    mediaCodec.queueInputBuffer(inputIndex, 0, 0, presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            if(native!=null) {
+                val deadline=now()+2_000_000_000L
+                var eos=false
+                while(!eos && now()<deadline) {
+                    val index=native.dequeueInputBuffer(10_000)
+                    if(index>=0) {
+                        native.queueInputBuffer(index,0,0,timeUs,MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        eos=true
+                    } else drain(false,deadline)
                 }
-                drainOutput(true)
-                mediaCodec.stop()
-                mediaCodec.release()
+                if(!eos) throw IOException("无法提交编码结束信号")
+                drain(true,deadline)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error finishing AAC encoder", e)
         } finally {
-            codec = null
-            try {
-                outputStream?.flush()
-                outputStream?.close()
-            } catch (_: Exception) {}
-            outputStream = null
+            runCatching { native?.stop() }; runCatching { native?.release() }; codec=null
+            stream.flush(); stream.close()
         }
         return file.length()
     }
+    companion object {
+        /** Discard an incomplete trailing ADTS frame after a process interruption. */
+        fun recover(file: File): Long {
+            var frames=0L; var offset=0L
+            RandomAccessFile(file,"rw").use { input ->
+                val header=ByteArray(7)
+                while(offset+7<=input.length()) {
+                    input.seek(offset); input.readFully(header)
+                    if(header[0].toInt() and 255 != 255 || header[1].toInt() and 0xF6 != 0xF0) break
+                    val length=((header[3].toInt() and 3) shl 11) or
+                        ((header[4].toInt() and 255) shl 3) or ((header[5].toInt() and 0xE0) shr 5)
+                    if(length<7 || offset+length>input.length()) break
+                    offset+=length; frames++
+                }
+                input.setLength(offset)
+            }
+            return frames*1024*1000/16000
+        }
+    }
+}
+
+/** Codec boundary lets deadline/resource behavior be tested without a physical encoder. */
+internal interface AacEncoderPort {
+    fun dequeueInputBuffer(timeoutUs:Long):Int
+    fun getInputBuffer(index:Int):ByteBuffer?
+    fun queueInputBuffer(index:Int,offset:Int,size:Int,timeUs:Long,flags:Int)
+    fun dequeueOutputBuffer(info:MediaCodec.BufferInfo,timeoutUs:Long):Int
+    fun getOutputBuffer(index:Int):ByteBuffer?
+    fun releaseOutputBuffer(index:Int,render:Boolean)
+    fun stop()
+    fun release()
+}
+internal class AndroidAacEncoder(rate:Int,bitrate:Int):AacEncoderPort {
+    private val codec=MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+    init {
+        try {
+            codec.configure(MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC,rate,1).apply {
+                setInteger(MediaFormat.KEY_AAC_PROFILE,MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                setInteger(MediaFormat.KEY_BIT_RATE,bitrate)
+            },null,null,MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.start()
+        } catch(e:Exception) {runCatching {codec.release()};throw e}
+    }
+    override fun dequeueInputBuffer(timeoutUs:Long)=codec.dequeueInputBuffer(timeoutUs)
+    override fun getInputBuffer(index:Int)=codec.getInputBuffer(index)
+    override fun queueInputBuffer(index:Int,offset:Int,size:Int,timeUs:Long,flags:Int)=codec.queueInputBuffer(index,offset,size,timeUs,flags)
+    override fun dequeueOutputBuffer(info:MediaCodec.BufferInfo,timeoutUs:Long)=codec.dequeueOutputBuffer(info,timeoutUs)
+    override fun getOutputBuffer(index:Int)=codec.getOutputBuffer(index)
+    override fun releaseOutputBuffer(index:Int,render:Boolean)=codec.releaseOutputBuffer(index,render)
+    override fun stop()=codec.stop()
+    override fun release()=codec.release()
 }

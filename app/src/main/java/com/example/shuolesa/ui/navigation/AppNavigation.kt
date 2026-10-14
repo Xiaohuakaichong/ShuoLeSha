@@ -1,411 +1,141 @@
 package com.example.shuolesa.ui.navigation
 
-import android.app.Activity
-import android.content.Intent
-import android.widget.Toast
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Today
-import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.example.shuolesa.data.db.AppDatabase
-import com.example.shuolesa.data.db.AudioRecordEntity
-import com.example.shuolesa.data.prefs.AppPreferences
-import com.example.shuolesa.data.repository.AudioRepository
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.runtime.*
+import androidx.navigation3.ui.NavDisplay
+import com.example.shuolesa.AppContainer
+import com.example.shuolesa.audio.CapturePhase
+import com.example.shuolesa.data.model.EvidenceRef
 import com.example.shuolesa.service.AudioCaptureService
-import com.example.shuolesa.theme.Accent
-import com.example.shuolesa.theme.AccentOn
-import com.example.shuolesa.theme.AppColor
-import com.example.shuolesa.theme.Dimens
-import com.example.shuolesa.theme.InkAtmosphere
-import com.example.shuolesa.theme.ModeCasual
-import com.example.shuolesa.ui.components.pressScale
-import com.example.shuolesa.theme.TextMuted
-import com.example.shuolesa.theme.TextPrimary
-import com.example.shuolesa.ui.components.RecordingModeSelectSheet
-import com.example.shuolesa.ui.screens.ActiveRecordingScreen
-import com.example.shuolesa.ui.screens.AudioPlayerScreen
-import com.example.shuolesa.ui.screens.LifeLogScreen
-import com.example.shuolesa.ui.screens.NodeSettingsScreen
-import com.example.shuolesa.ui.screens.TasksScreen
-import com.example.shuolesa.ui.screens.TimelineScreen
-import com.example.shuolesa.util.PermissionHelper
-import kotlinx.coroutines.delay
+import com.example.shuolesa.ui.*
+import com.example.shuolesa.ui.components.*
+import com.example.shuolesa.ui.screens.*
+import kotlinx.coroutines.flow.collect
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import kotlinx.serialization.Serializable
 
-/**
- * 主导航：记录 / 今日 | 录音 | 待办 / 设置。录音键几何居中。
- */
-@Composable
-fun AppNavigation() {
-    val context = LocalContext.current
-    val prefs = remember { AppPreferences(context) }
-    val db = remember { AppDatabase.getInstance(context) }
-    val repository = remember { AudioRepository(db.audioRecordDao()) }
-    val permissionHelper = remember { PermissionHelper(context) }
+@Serializable data object Home:NavKey
+@Serializable data class Detail(val id:String,val topicId:String?=null):NavKey
+@Serializable data class Source(val chunkId:Long,val start:Int,val end:Int):NavKey
+@Serializable data class Recall(val sessionId:String?=null):NavKey
+@Serializable data object Capture:NavKey
+@Serializable data class Settings(val page:String="home"):NavKey
 
-    val launchStrategy by prefs.launchStrategy.collectAsState(initial = "default")
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var isRecording by remember { mutableStateOf(AudioCaptureService.isRunning) }
-    var selectedRecord by remember { mutableStateOf<AudioRecordEntity?>(null) }
-    var showModeSelectSheet by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            isRecording = AudioCaptureService.isRunning
-            delay(500)
-        }
+@Composable fun AppNavigation(app:AppContainer) {
+    val stack=rememberNavBackStack(Home)
+    val capture by AudioCaptureService.state.collectAsStateWithLifecycle()
+    val memory:MemoryViewModel=viewModel(factory=factory {MemoryViewModel(app)})
+    val settings:SettingsViewModel=viewModel(factory=factory {SettingsViewModel(app)})
+    val snackbar=remember {SnackbarHostState()}
+    var modeSheet by remember {mutableStateOf(false)}
+    var importSheet by remember {mutableStateOf(false)}
+    var selectedMode by remember {mutableStateOf("lifelog")}
+    val strategy by app.preferences.launchStrategy.collectAsStateWithLifecycle("default")
+    val mode by app.preferences.recordingMode.collectAsStateWithLifecycle("lifelog")
+    val back:()->Unit={if(stack.size>1) stack.removeAt(stack.lastIndex)}
+    val source:(EvidenceRef)->Unit={ref->stack.add(Source(ref.chunkId,ref.start,ref.end))}
+    val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if(granted) {memory.command(AudioCaptureService.ACTION_START,selectedMode);stack.add(Capture)}
+        else memory.message.value="麦克风权限未授予，可继续查看记忆或导入音频"
     }
-
-    val triggerStartRecord: (String?) -> Unit = { modeOverride ->
-        if (permissionHelper.hasMicPermission()) {
-            val intent = Intent(context, AudioCaptureService::class.java).apply {
-                action = AudioCaptureService.ACTION_START
-                if (modeOverride != null) {
-                    putExtra(AudioCaptureService.EXTRA_RECORDING_MODE, modeOverride)
-                }
-            }
-            ContextCompat.startForegroundService(context, intent)
-        } else {
-            Toast.makeText(context, "请先授予麦克风权限", Toast.LENGTH_SHORT).show()
-            selectedTab = 3
-        }
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri:Uri?->uri?.let {memory.import(it,selectedMode)} }
+    fun start(selected:String) {selectedMode=selected
+        if(ContextCompat.checkSelfPermission(app.context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) {
+            memory.command(AudioCaptureService.ACTION_START,selected);if(stack.lastOrNull()!=Capture) stack.add(Capture)
+        } else permission.launch(Manifest.permission.RECORD_AUDIO)
     }
-
-    val onStartRecordClick: () -> Unit = {
-        if (launchStrategy == "prompt") {
-            showModeSelectSheet = true
-        } else {
-            triggerStartRecord(null)
-        }
-    }
-
-    val onOpenSettings = { selectedTab = 3 }
-    val mainChromeVisible = !isRecording && selectedRecord == null
-
-    BackHandler(enabled = isRecording) {
-        (context as? Activity)?.moveTaskToBack(true)
-    }
-
-    var lastBackExitAt by remember { mutableLongStateOf(0L) }
-    BackHandler(enabled = mainChromeVisible) {
-        val now = System.currentTimeMillis()
-        if (now - lastBackExitAt < 2000L) {
-            (context as? Activity)?.finish()
-        } else {
-            lastBackExitAt = now
-            Toast.makeText(context, "再按一次退出", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    LaunchedEffect(isRecording) {
-        if (isRecording) showModeSelectSheet = false
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        InkAtmosphere()
-        Scaffold(
-            containerColor = Color.Transparent,
-            bottomBar = {
-                if (mainChromeVisible) {
-                    MainBottomBar(
-                        selectedTab = selectedTab,
-                        onTabSelected = { selectedTab = it },
-                        onRecordClick = onStartRecordClick,
-                    )
-                }
-            },
-        ) { paddingValues ->
-            var visitedTabs by remember { mutableStateOf(setOf(selectedTab)) }
-            LaunchedEffect(selectedTab) {
-                visitedTabs = visitedTabs + selectedTab
-            }
-            Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-                KeepAliveTab(selected = selectedTab == 0, visited = 0 in visitedTabs) {
-                    TimelineScreen(
-                        repository = repository,
-                        prefs = prefs,
-                        onRecordClick = { record -> selectedRecord = record },
-                        onOpenSettings = onOpenSettings,
-                    )
-                }
-                KeepAliveTab(selected = selectedTab == 1, visited = 1 in visitedTabs) {
-                    LifeLogScreen(
-                        repository = repository,
-                        prefs = prefs,
-                        onOpenSettings = onOpenSettings,
-                        onRecordClick = { record -> selectedRecord = record },
-                    )
-                }
-                KeepAliveTab(selected = selectedTab == 2, visited = 2 in visitedTabs) {
-                    TasksScreen(
-                        repository = repository,
-                        onRecordClick = { record -> selectedRecord = record },
-                        onOpenSettings = onOpenSettings,
-                    )
-                }
-                KeepAliveTab(selected = selectedTab == 3, visited = 3 in visitedTabs) {
-                    NodeSettingsScreen(
-                        prefs = prefs,
-                        permissionHelper = permissionHelper,
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = isRecording,
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            ActiveRecordingScreen()
-        }
-
-        AnimatedVisibility(
-            visible = selectedRecord != null && !isRecording,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it }),
-        ) {
-            selectedRecord?.let { record ->
-                AudioPlayerScreen(
-                    record = record,
-                    repository = repository,
-                    prefs = prefs,
-                    onBack = { selectedRecord = null },
-                    onDeleted = { selectedRecord = null },
-                )
-            }
-        }
-
-        if (showModeSelectSheet) {
-            RecordingModeSelectSheet(
-                onDismiss = { showModeSelectSheet = false },
-                onSelectMode = { mode ->
-                    showModeSelectSheet = false
-                    triggerStartRecord(mode)
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun KeepAliveTab(
-    selected: Boolean,
-    visited: Boolean,
-    content: @Composable () -> Unit,
-) {
-    if (!visited) return
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .zIndex(if (selected) 1f else 0f)
-            .graphicsLayer { alpha = if (selected) 1f else 0f }
-            .then(
-                if (selected) {
-                    Modifier
-                } else {
-                    Modifier.pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                event.changes.forEach { it.consume() }
+    val openCapture:()->Unit={if(capture.active) {if(stack.lastOrNull()!=Capture) stack.add(Capture)} else if(strategy=="prompt") modeSheet=true else start(mode)}
+    Box(Modifier.fillMaxSize()) {
+        NavDisplay(backStack=stack,onBack=back,
+            entryDecorators=listOf(rememberSaveableStateHolderNavEntryDecorator(),rememberViewModelStoreNavEntryDecorator()),
+            entryProvider=entryProvider {
+            entry<Home> {
+                var tab by rememberSaveable {mutableIntStateOf(0)}
+                val today:TodayViewModel=viewModel(factory=factory {TodayViewModel(app)})
+                val tasks:TasksViewModel=viewModel(factory=factory {TasksViewModel(app)})
+                Messages(memory,snackbar);Messages(today,snackbar);Messages(tasks,snackbar)
+                Page(listOf("记忆","今日","待办")[tab],actions={
+                    if(tab==0) IconButton(onClick={importSheet=true}) {Icon(Icons.Outlined.FileUpload,"导入音频")}
+                    IconButton(onClick={stack.add(Settings())}) {Icon(Icons.Outlined.Settings,"设置")}
+                },bottom={
+                    Column {
+                        if(capture.active) Surface(onClick=openCapture,color=MaterialTheme.colorScheme.primaryContainer) {
+                            Row(Modifier.fillMaxWidth().heightIn(min=60.dp).padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Ceer(if(capture.phase==CapturePhase.PAUSED) CeerPose.PAUSED else CeerPose.LISTENING,Modifier.size(32.dp))
+                                Text("${capture.modeLabel} · ${if(capture.phase==CapturePhase.PAUSED) "已暂停" else "录音中"} ${duration(capture.durationMs)}",Modifier.weight(1f).padding(start=12.dp))
+                                IconButton(onClick={memory.command(if(capture.phase==CapturePhase.PAUSED) AudioCaptureService.ACTION_RESUME else AudioCaptureService.ACTION_PAUSE)}) {Icon(if(capture.phase==CapturePhase.PAUSED) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,"暂停或继续")}
+                            }
+                        }
+                        NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+                            listOf("记忆" to Icons.Outlined.GraphicEq,"今日" to Icons.Outlined.Today,"待办" to Icons.Outlined.CheckCircle).forEachIndexed { i,(label,icon)->
+                                NavigationBarItem(tab==i,{tab=i},icon={Icon(icon,label)},label={Text(label)})
                             }
                         }
                     }
-                },
-            ),
-    ) {
-        content()
+                }) { padding -> Box(Modifier.padding(padding).fillMaxSize()) {
+                    when(tab) {0->MemoryScreen(memory,{id,topic->stack.add(Detail(id,topic))},{stack.add(Recall())},{importSheet=true},{stack.add(Settings("service"))})
+                        1->TodayScreen(today,{id,topic->stack.add(Detail(id,topic))},source)
+                        else->TasksScreen(tasks,source)}
+                    FloatingActionButton(onClick=openCapture,modifier=Modifier.align(Alignment.BottomEnd).padding(20.dp),containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary) {
+                        Icon(Icons.Default.Mic,if(capture.active) "展开录音" else "开始录音")
+                    }
+                } }
+            }
+            entry<Detail> { key ->
+                val vm:DetailViewModel=viewModel(key="detail:${key.id}:${key.topicId}",factory=factory {DetailViewModel(app,key.id,key.topicId)})
+                val player:PlaybackViewModel=viewModel(key="detail-player:${key.id}:${key.topicId}",factory=factory {PlaybackViewModel(app)})
+                Messages(vm,snackbar)
+                DetailScreen(vm,player,back,source,{stack.add(Recall(key.id))})
+            }
+            entry<Source> { key ->
+                val vm:SourceViewModel=viewModel(key="source:${key.chunkId}",factory=factory {SourceViewModel(app,key.chunkId)})
+                val player:PlaybackViewModel=viewModel(key="source-player:${key.chunkId}",factory=factory {PlaybackViewModel(app)})
+                SourceScreen(vm,player,key.start,key.end,back)
+            }
+            entry<Recall> { key ->
+                val vm:RecallViewModel=viewModel(key="recall:${key.sessionId}",factory=factory {RecallViewModel(app)})
+                RecallScreen(vm,back,source,key.sessionId)
+            }
+            entry<Capture> {
+                val snap by memory.snapshot.collectAsStateWithLifecycle()
+                val transcribed=snap.transcripts.count {t->snap.chunks.any {it.id==t.chunkId && it.sessionId==capture.sessionId}}
+                CaptureScreen(capture,back,{memory.command(it)},transcribed)
+            }
+            entry<Settings> { key ->Messages(settings,snackbar);SettingsScreen(settings,key.page,back,{stack.add(Settings(it))}) }
+        })
+        SnackbarHost(snackbar,Modifier.align(Alignment.BottomCenter).padding(16.dp,16.dp,16.dp,100.dp))
+    }
+    if(modeSheet || importSheet) ModeSheet(importSheet,{modeSheet=false;importSheet=false}) { selected ->
+        selectedMode=selected
+        if(importSheet) {importSheet=false;picker.launch(arrayOf("audio/*","video/*"))}
+        else {modeSheet=false;start(selected)}
     }
 }
-
-private data class BottomTab(val label: String, val icon: ImageVector)
-
-@Composable
-private fun MainBottomBar(
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
-    onRecordClick: () -> Unit,
-) {
-    val items = listOf(
-        BottomTab("记录", Icons.Outlined.GraphicEq),
-        BottomTab("今日", Icons.Default.Today),
-        BottomTab("待办", Icons.Default.CheckCircleOutline),
-        BottomTab("设置", Icons.Outlined.Settings),
-    )
-
-    val pillShape = RoundedCornerShape(34.dp)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(start = Dimens.gapMd, end = Dimens.gapMd, bottom = Dimens.gapSm),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(Dimens.bottomBarHeight)
-                .shadow(
-                    elevation = 18.dp,
-                    shape = pillShape,
-                    ambientColor = AppColor.accentShadow,
-                    spotColor = AppColor.shadowTint,
-                )
-                .clip(pillShape)
-                .background(AppColor.surfaceGlass)
-                .border(Dimens.borderThin, AppColor.outline, pillShape),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BottomTabItem(
-                tab = items[0],
-                selected = selectedTab == 0,
-                onClick = { onTabSelected(0) },
-                modifier = Modifier.weight(1f),
-            )
-            BottomTabItem(
-                tab = items[1],
-                selected = selectedTab == 1,
-                onClick = { onTabSelected(1) },
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(modifier = Modifier.size(Dimens.recordButton))
-            BottomTabItem(
-                tab = items[2],
-                selected = selectedTab == 2,
-                onClick = { onTabSelected(2) },
-                modifier = Modifier.weight(1f),
-            )
-            BottomTabItem(
-                tab = items[3],
-                selected = selectedTab == 3,
-                onClick = { onTabSelected(3) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        val recordInteraction = remember { MutableInteractionSource() }
-        val recordPressed by recordInteraction.collectIsPressedAsState()
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .offset(y = (-18).dp)
-                .pressScale(recordPressed, 0.94f)
-                .size(Dimens.recordButton)
-                .shadow(
-                    elevation = Dimens.fabElevation,
-                    shape = CircleShape,
-                    ambientColor = AppColor.accentShadow,
-                    spotColor = AppColor.accentShadow,
-                )
-                .clip(CircleShape)
-                .background(Accent)
-                .clickable(
-                    interactionSource = recordInteraction,
-                    indication = null,
-                    onClick = onRecordClick,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Default.Mic,
-                contentDescription = "开始录音",
-                tint = AccentOn,
-                modifier = Modifier.size(Dimens.fabIconSize),
-            )
-        }
-    }
+@Composable private fun Messages(vm:FeatureViewModel,host:SnackbarHostState) {
+    LaunchedEffect(vm) {vm.message.collect {message -> if(message!=null) {host.showSnackbar(message);vm.message.value=null} } }
 }
-
-@Composable
-private fun BottomTabItem(
-    tab: BottomTab,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    Column(
-        modifier = modifier
-            .pressScale(pressed, 0.96f)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(18.dp))
-                .background(if (selected) Accent.copy(alpha = 0.14f) else Color.Transparent)
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-        ) {
-            Icon(
-                imageVector = tab.icon,
-                contentDescription = tab.label,
-                tint = if (selected) Accent else TextMuted,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = tab.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) TextPrimary else TextMuted,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        )
-    }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun ModeSheet(import:Boolean,onDismiss:()->Unit,onSelect:(String)->Unit) {
+    ModalBottomSheet(onDismissRequest=onDismiss) {Column(Modifier.padding(24.dp).padding(bottom=24.dp)) {
+        Text(if(import) "如何整理这段音频" else "开始录音",style=MaterialTheme.typography.titleLarge);Spacer(Modifier.height(16.dp))
+        ActionRow("随身记忆","按话题形成记忆卡",Icons.Outlined.GraphicEq) {onSelect("lifelog")}
+        ActionRow("会议记录","整次会话形成纪要",Icons.Outlined.Groups) {onSelect("meeting")}
+    } }
 }

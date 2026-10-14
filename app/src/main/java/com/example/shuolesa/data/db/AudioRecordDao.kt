@@ -8,6 +8,33 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface AudioRecordDao {
 
+    @Query("SELECT * FROM audio_records WHERE sessionId=:id AND status!='SOURCE' ORDER BY chunkIndex,id")
+    suspend fun chunks(id: String): List<AudioRecordEntity>
+
+    @Query("SELECT * FROM audio_records WHERE status='WRITING'")
+    suspend fun unsealedChunks(): List<AudioRecordEntity>
+
+    @Query("UPDATE audio_records SET durationMs=:duration,fileSizeBytes=:size,status=:status WHERE id=:id")
+    suspend fun sealChunk(id: Long, duration: Long, size: Long, status: String = "PENDING")
+
+    @Query("DELETE FROM audio_records WHERE sessionId=:id")
+    suspend fun deleteSessionChunks(id: String)
+
+    @Query("UPDATE audio_records SET status='PENDING' WHERE status='UPLOADING'")
+    suspend fun recoverUploads()
+
+    @Query("UPDATE audio_records SET filePath=:path WHERE id=:id")
+    suspend fun updateFilePath(id: Long, path: String)
+
+    @Query("UPDATE audio_records SET sourceEndMs=:end WHERE id=:id")
+    suspend fun setSourceEnd(id: Long, end: Long)
+
+    @Query("""SELECT id,sessionId,chunkIndex,filePath,durationMs,fileSizeBytes,createdAt,status,
+        uploadedAt,retryCount,NULL AS title,NULL AS summary,NULL AS actionItems,NULL AS tags,
+        NULL AS transcription,NULL AS agentResult,recordingMode,audioFormat,NULL AS segmentsJson,
+        sourceStartMs,sourceEndMs FROM audio_records WHERE filePath!='' ORDER BY createdAt DESC""")
+    fun observeChunkMetadata(): Flow<List<AudioRecordEntity>>
+
     @Insert
     suspend fun insert(record: AudioRecordEntity): Long
 

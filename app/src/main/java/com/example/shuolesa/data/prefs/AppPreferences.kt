@@ -1,254 +1,156 @@
 package com.example.shuolesa.data.prefs
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.shuolesa.data.model.stableId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.security.MessageDigest
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "shuolesa_prefs")
+private val Context.dataStore by preferencesDataStore("shuolesa_prefs")
 
-enum class ProviderPreset(
-    val id: String,
-    val displayName: String,
-    val defaultBaseUrl: String,
-    val defaultAsrModel: String,
-    val defaultLlmModel: String,
-) {
-    STEPFUN(
-        id = "stepfun",
-        displayName = "阶跃星辰 (StepFun)",
-        defaultBaseUrl = "https://api.stepfun.com/step_plan/v1",
-        defaultAsrModel = "stepaudio-2.5-asr",
-        defaultLlmModel = "step-router-v1",
-    ),
-    SILICONFLOW(
-        id = "siliconflow",
-        displayName = "硅基流动 (SiliconFlow)",
-        defaultBaseUrl = "https://api.siliconflow.cn/v1",
-        defaultAsrModel = "FunAudioLLM/SenseVoiceSmall",
-        defaultLlmModel = "deepseek-ai/DeepSeek-V3",
-    ),
-    LOCAL_OR_CUSTOM(
-        id = "custom",
-        displayName = "本地服务 / 自定义 OpenAI",
-        defaultBaseUrl = "http://10.0.2.2:8000/v1",
-        defaultAsrModel = "whisper-1",
-        defaultLlmModel = "default",
-    );
+enum class ProviderPreset(val id: String,val displayName: String,val defaultBaseUrl: String,
+    val defaultAsrModel: String,val defaultLlmModel: String) {
+    STEPFUN("stepfun","阶跃星辰","https://api.stepfun.com/step_plan/v1","stepaudio-2.5-asr","step-router-v1"),
+    SILICONFLOW("siliconflow","硅基流动","https://api.siliconflow.cn/v1","FunAudioLLM/SenseVoiceSmall","deepseek-ai/DeepSeek-V3"),
+    LOCAL_OR_CUSTOM("custom","本地 / 自定义","http://10.0.2.2:8000/v1","whisper-1","default");
+    companion object { fun fromId(id: String)=entries.find { it.id==id } ?: STEPFUN }
+}
 
-    companion object {
-        fun fromId(id: String): ProviderPreset {
-            return entries.find { it.id == id } ?: STEPFUN
-        }
+data class AiSettings(val provider: String,val baseUrl: String,val apiKey: String,
+    val asrModel: String,val llmModel: String,val prompt: String) {
+    val local: Boolean get() {
+        val url=runCatching { baseUrl.toHttpUrl() }.getOrNull() ?: return false
+        val host=url.host
+        val parts=host.split('.')
+        val bytes=if(parts.size==4) parts.mapNotNull {it.toIntOrNull()?.takeIf {n->n in 0..255}} else emptyList()
+        val privateIp=bytes.size==4 && (bytes[0]==10 || bytes[0]==127 || (bytes[0]==192 && bytes[1]==168) || (bytes[0]==172 && bytes[1] in 16..31))
+        return url.scheme=="http" && (host=="localhost" || host=="::1" || privateIp || host.endsWith(".local"))
     }
+    fun validate() {
+        val url=baseUrl.trim().trimEnd('/').toHttpUrl()
+        require(url.username.isEmpty() && url.password.isEmpty() && url.query==null && url.fragment==null) {"服务地址不能包含凭据、查询参数或片段"}
+        require(url.scheme=="https" || local) {"云端服务请使用 HTTPS；HTTP 仅用于本地网络"}
+        require(asrModel.isNotBlank() && llmModel.isNotBlank()) {"请填写转写与整理模型"}
+    }
+    override fun toString()="AiSettings(provider=$provider,baseUrl=$baseUrl,credentialConfigured=${apiKey.isNotBlank()})"
 }
 
 class AppPreferences(private val context: Context) {
-
+    private val secrets=SecretStore()
+    private val store get()=context.dataStore
     companion object {
-        const val DEFAULT_SYSTEM_PROMPT = """你是一个随身语音灵感与会议纪要秘书。
-请根据用户的录音文字稿，提取并输出结构化的纯 JSON 字符串，格式如下：
-{
-  "title": "简明凝练的标题（10字以内）",
-  "summary": "核心要点提炼（1-3句话，清晰明了）",
-  "action_items": ["待办/行动事项1", "待办/行动事项2"],
-  "tags": ["分类标签1", "分类标签2"]
-}
-注意：
-1. 仔细分析发言中提及的所有任务、计划、会议、待办事项、约定或行动目标，逐条精炼地放入 action_items 数组；若确实没有任何待办，返回空数组 []；
-2. tags 从 [工作, 会议, 灵感, 待办, 学习, 生活, 随想] 中提炼 1-3 个；
-3. 必须输出合法且标准的 JSON 对象，不要输出任何推理说明、思考过程或多余文本。"""
-
-        const val DEFAULT_API_KEY = "1UEjWRLNDhItB04RbcyxKZIxxWqWzhVo4O56rkZsrRKBHOZ8FbFkc1bqEKlUWFIxq"
-
-        private val KEY_PROVIDER_MODE = stringPreferencesKey("provider_mode")
-        private val KEY_BASE_URL = stringPreferencesKey("base_url")
-        private val KEY_API_KEY = stringPreferencesKey("api_key")
-        private val KEY_ASR_MODEL = stringPreferencesKey("asr_model")
-        private val KEY_LLM_MODEL = stringPreferencesKey("llm_model")
-        private val KEY_SYSTEM_PROMPT = stringPreferencesKey("system_prompt")
-        private val KEY_KEEP_LOCAL_AUDIO = booleanPreferencesKey("keep_local_audio")
-
-        private val KEY_HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
-        private val KEY_AUTO_RESUME_AFTER_CALL = booleanPreferencesKey("auto_resume_after_call")
-        private val KEY_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("trigger_duration_sec")
-        private val KEY_RECORDING_MODE = stringPreferencesKey("recording_mode")
-        private val KEY_LIFELOG_BITRATE_KBPS = androidx.datastore.preferences.core.intPreferencesKey("lifelog_bitrate_kbps")
-        private val KEY_MEETING_FORMAT = stringPreferencesKey("meeting_format")
-        private val KEY_LAUNCH_STRATEGY = stringPreferencesKey("launch_strategy")
-        private val KEY_LIFELOG_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("lifelog_trigger_duration_sec")
-        private val KEY_MEETING_TRIGGER_DURATION = androidx.datastore.preferences.core.intPreferencesKey("meeting_trigger_duration_sec")
-        private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        const val DEFAULT_SYSTEM_PROMPT="只依据录音原稿整理。区分事实、推测与建议；引用必须来自原文，不推断真人身份。"
+        const val DEFAULT_API_KEY=""
+        private const val RETIRED_CREDENTIAL_HASH="f5fad720333cfccff25d65695310080f15bc64cf62963e8c99f2f452a35e3dd7"
+        private val PROVIDER=stringPreferencesKey("provider_mode")
+        private val BASE=stringPreferencesKey("base_url")
+        private val OLD_KEY=stringPreferencesKey("api_key")
+        private val ASR=stringPreferencesKey("asr_model")
+        private val LLM=stringPreferencesKey("llm_model")
+        private val PROMPT=stringPreferencesKey("system_prompt")
+        private val THEME=stringPreferencesKey("theme_mode")
+        private val MODE=stringPreferencesKey("recording_mode")
+        private val BITRATE=intPreferencesKey("lifelog_bitrate_kbps")
+        private val FORMAT=stringPreferencesKey("meeting_format")
+        private val STRATEGY=stringPreferencesKey("launch_strategy")
+        private val HAPTIC=booleanPreferencesKey("haptic_enabled")
+        private val RESUME=booleanPreferencesKey("auto_resume_after_call")
+        private val TRIGGER=intPreferencesKey("trigger_duration_sec")
+        private val LIFE_TRIGGER=intPreferencesKey("lifelog_trigger_duration_sec")
+        private val MEETING_TRIGGER=intPreferencesKey("meeting_trigger_duration_sec")
+        private val KEEP=booleanPreferencesKey("keep_local_audio")
+        private val MIGRATED=booleanPreferencesKey("v4_credentials_migrated")
+        private fun credential(base: String)=stringPreferencesKey("credential_"+stableId(base.toHttpUrlOrNull()?.toString()?.trimEnd('/') ?: base.trimEnd('/')))
     }
+    private fun <T> flow(key: Preferences.Key<T>,default: T): Flow<T> = store.data.map { it[key] ?: default }
+    private suspend fun <T> set(key: Preferences.Key<T>,value: T) { store.edit { it[key]=value } }
+    val providerMode=flow(PROVIDER,"stepfun")
+    val baseUrl=flow(BASE,ProviderPreset.STEPFUN.defaultBaseUrl)
+    val apiKey=store.data.map { p -> secrets.decrypt(p[credential(p[BASE] ?: ProviderPreset.STEPFUN.defaultBaseUrl)]) }
+    val asrModel=flow(ASR,ProviderPreset.STEPFUN.defaultAsrModel)
+    val llmModel=flow(LLM,ProviderPreset.STEPFUN.defaultLlmModel)
+    val systemPrompt=flow(PROMPT,DEFAULT_SYSTEM_PROMPT)
+    val themeMode=flow(THEME,"system")
+    val recordingMode=flow(MODE,"lifelog")
+    val lifelogBitrateKbps=flow(BITRATE,24)
+    val meetingFormat=flow(FORMAT,"wav")
+    val launchStrategy=flow(STRATEGY,"default")
+    val hapticEnabled=flow(HAPTIC,true)
+    val autoResumeAfterCall=flow(RESUME,false)
+    val triggerDuration=flow(TRIGGER,3)
+    val lifelogTriggerDuration=flow(LIFE_TRIGGER,2)
+    val meetingTriggerDuration=flow(MEETING_TRIGGER,4)
+    val keepLocalAudio=flow(KEEP,true)
 
-    val providerMode: Flow<String> = context.dataStore.data.map { it[KEY_PROVIDER_MODE] ?: ProviderPreset.STEPFUN.id }
-    val baseUrl: Flow<String> = context.dataStore.data.map { it[KEY_BASE_URL] ?: ProviderPreset.STEPFUN.defaultBaseUrl }
-    val apiKey: Flow<String> = context.dataStore.data.map {
-        it[KEY_API_KEY]?.takeIf { k -> k.isNotBlank() } ?: DEFAULT_API_KEY
-    }
-    val asrModel: Flow<String> = context.dataStore.data.map { it[KEY_ASR_MODEL] ?: ProviderPreset.STEPFUN.defaultAsrModel }
-    val llmModel: Flow<String> = context.dataStore.data.map { it[KEY_LLM_MODEL] ?: ProviderPreset.STEPFUN.defaultLlmModel }
-    val systemPrompt: Flow<String> = context.dataStore.data.map { it[KEY_SYSTEM_PROMPT] ?: DEFAULT_SYSTEM_PROMPT }
-    val keepLocalAudio: Flow<Boolean> = context.dataStore.data.map { it[KEY_KEEP_LOCAL_AUDIO] ?: true }
-
-    val hapticEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_HAPTIC_ENABLED] ?: true }
-    val autoResumeAfterCall: Flow<Boolean> = context.dataStore.data.map { it[KEY_AUTO_RESUME_AFTER_CALL] ?: false }
-    val triggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_TRIGGER_DURATION] ?: 3 }
-
-    val recordingMode: Flow<String> = context.dataStore.data.map { it[KEY_RECORDING_MODE] ?: "lifelog" }
-    val lifelogBitrateKbps: Flow<Int> = context.dataStore.data.map { it[KEY_LIFELOG_BITRATE_KBPS] ?: 24 }
-    val meetingFormat: Flow<String> = context.dataStore.data.map { it[KEY_MEETING_FORMAT] ?: "wav" }
-    val launchStrategy: Flow<String> = context.dataStore.data.map { it[KEY_LAUNCH_STRATEGY] ?: "default" }
-    val lifelogTriggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_LIFELOG_TRIGGER_DURATION] ?: 2 }
-    val meetingTriggerDuration: Flow<Int> = context.dataStore.data.map { it[KEY_MEETING_TRIGGER_DURATION] ?: 4 }
-    val themeMode: Flow<String> = context.dataStore.data.map { it[KEY_THEME_MODE] ?: "light" }
-
-    suspend fun setProviderMode(value: String) {
-        context.dataStore.edit { it[KEY_PROVIDER_MODE] = value }
-    }
-
-    suspend fun applyPreset(preset: ProviderPreset) {
-        context.dataStore.edit {
-            it[KEY_PROVIDER_MODE] = preset.id
-            it[KEY_BASE_URL] = preset.defaultBaseUrl
-            it[KEY_ASR_MODEL] = preset.defaultAsrModel
-            it[KEY_LLM_MODEL] = preset.defaultLlmModel
+    suspend fun initialize() {
+        store.edit { p ->
+            if(p[MIGRATED]!=true) {
+                val old=p[OLD_KEY].orEmpty()
+                val hash=MessageDigest.getInstance("SHA-256").digest(old.toByteArray()).joinToString("") { "%02x".format(it) }
+                if(old.isNotBlank() && hash!=RETIRED_CREDENTIAL_HASH) {
+                    p[credential(p[BASE] ?: ProviderPreset.STEPFUN.defaultBaseUrl)]=secrets.encrypt(old)
+                }
+                p.remove(OLD_KEY); p[KEEP]=true; p[MIGRATED]=true
+            }
         }
     }
-
-    suspend fun setBaseUrl(value: String) {
-        context.dataStore.edit { it[KEY_BASE_URL] = value.trim() }
+    suspend fun aiSettings(): AiSettings {
+        val p=store.data.first(); val base=p[BASE] ?: ProviderPreset.STEPFUN.defaultBaseUrl
+        return AiSettings(p[PROVIDER] ?: "stepfun",base,secrets.decrypt(p[credential(base)]),
+            p[ASR] ?: ProviderPreset.STEPFUN.defaultAsrModel,p[LLM] ?: ProviderPreset.STEPFUN.defaultLlmModel,
+            p[PROMPT] ?: DEFAULT_SYSTEM_PROMPT)
     }
-
-    suspend fun setApiKey(value: String) {
-        context.dataStore.edit { it[KEY_API_KEY] = value.trim() }
+    suspend fun credentialFor(base:String)=secrets.decrypt(store.data.first()[credential(base)])
+    fun validate(value: AiSettings) {
+        value.validate()
     }
-
-    suspend fun setAsrModel(value: String) {
-        context.dataStore.edit { it[KEY_ASR_MODEL] = value.trim() }
+    suspend fun saveAiSettings(value: AiSettings) {
+        validate(value)
+        val url=value.baseUrl.trim().trimEnd('/').toHttpUrl()
+        val encrypted=secrets.encrypt(value.apiKey.trim())
+        store.edit { p ->
+            p[PROVIDER]=value.provider; p[BASE]=url.toString().trimEnd('/')
+            p[ASR]=value.asrModel.trim(); p[LLM]=value.llmModel.trim(); p[PROMPT]=value.prompt
+            p[credential(p[BASE]!!)]=encrypted
+        }
     }
-
-    suspend fun setLlmModel(value: String) {
-        context.dataStore.edit { it[KEY_LLM_MODEL] = value.trim() }
-    }
-
-    suspend fun setSystemPrompt(value: String) {
-        context.dataStore.edit { it[KEY_SYSTEM_PROMPT] = value }
-    }
-
-    suspend fun setKeepLocalAudio(value: Boolean) {
-        context.dataStore.edit { it[KEY_KEEP_LOCAL_AUDIO] = value }
-    }
-
-    suspend fun setHapticEnabled(value: Boolean) {
-        context.dataStore.edit { it[KEY_HAPTIC_ENABLED] = value }
-    }
-
-    suspend fun setAutoResumeAfterCall(value: Boolean) {
-        context.dataStore.edit { it[KEY_AUTO_RESUME_AFTER_CALL] = value }
-    }
-
-    suspend fun setTriggerDuration(value: Int) {
-        context.dataStore.edit { it[KEY_TRIGGER_DURATION] = value }
-    }
-
-    suspend fun setThemeMode(value: String) {
-        context.dataStore.edit { it[KEY_THEME_MODE] = value }
-    }
-
-    // Sync helper methods for background workers & diagnostics
-    suspend fun getBaseUrlSync(): String {
-        return context.dataStore.data.first()[KEY_BASE_URL] ?: ProviderPreset.STEPFUN.defaultBaseUrl
-    }
-
-    suspend fun getApiKeySync(): String {
-        val k = context.dataStore.data.first()[KEY_API_KEY]
-        return if (k.isNullOrBlank()) DEFAULT_API_KEY else k
-    }
-
-    suspend fun getAsrModelSync(): String {
-        return context.dataStore.data.first()[KEY_ASR_MODEL] ?: ProviderPreset.STEPFUN.defaultAsrModel
-    }
-
-    suspend fun getLlmModelSync(): String {
-        return context.dataStore.data.first()[KEY_LLM_MODEL] ?: ProviderPreset.STEPFUN.defaultLlmModel
-    }
-
-    suspend fun getSystemPromptSync(): String {
-        return context.dataStore.data.first()[KEY_SYSTEM_PROMPT] ?: DEFAULT_SYSTEM_PROMPT
-    }
-
-    suspend fun isKeepLocalAudioSync(): Boolean {
-        return context.dataStore.data.first()[KEY_KEEP_LOCAL_AUDIO] ?: true
-    }
-
-    suspend fun isHapticEnabledSync(): Boolean {
-        return context.dataStore.data.first()[KEY_HAPTIC_ENABLED] ?: true
-    }
-
-    suspend fun setRecordingMode(mode: String) {
-        context.dataStore.edit { it[KEY_RECORDING_MODE] = mode }
-    }
-
-    suspend fun setLifelogBitrateKbps(bitrate: Int) {
-        context.dataStore.edit { it[KEY_LIFELOG_BITRATE_KBPS] = bitrate }
-    }
-
-    suspend fun setMeetingFormat(format: String) {
-        context.dataStore.edit { it[KEY_MEETING_FORMAT] = format }
-    }
-
-    suspend fun getRecordingModeSync(): String {
-        var result = "lifelog"
-        context.dataStore.edit { result = it[KEY_RECORDING_MODE] ?: "lifelog" }
-        return result
-    }
-
-    suspend fun getLifelogBitrateKbpsSync(): Int {
-        var result = 24
-        context.dataStore.edit { result = it[KEY_LIFELOG_BITRATE_KBPS] ?: 24 }
-        return result
-    }
-
-    suspend fun getMeetingFormatSync(): String {
-        var result = "wav"
-        context.dataStore.edit { result = it[KEY_MEETING_FORMAT] ?: "wav" }
-        return result
-    }
-
-    suspend fun setLaunchStrategy(strategy: String) {
-        context.dataStore.edit { it[KEY_LAUNCH_STRATEGY] = strategy }
-    }
-
-    suspend fun setLifelogTriggerDuration(seconds: Int) {
-        context.dataStore.edit { it[KEY_LIFELOG_TRIGGER_DURATION] = seconds }
-    }
-
-    suspend fun setMeetingTriggerDuration(seconds: Int) {
-        context.dataStore.edit { it[KEY_MEETING_TRIGGER_DURATION] = seconds }
-    }
-
-    suspend fun getLaunchStrategySync(): String {
-        var result = "default"
-        context.dataStore.edit { result = it[KEY_LAUNCH_STRATEGY] ?: "default" }
-        return result
-    }
-
-    suspend fun getLifelogTriggerDurationSync(): Int {
-        var result = 2
-        context.dataStore.edit { result = it[KEY_LIFELOG_TRIGGER_DURATION] ?: 2 }
-        return result
-    }
-
-    suspend fun getMeetingTriggerDurationSync(): Int {
-        var result = 4
-        context.dataStore.edit { result = it[KEY_MEETING_TRIGGER_DURATION] ?: 4 }
-        return result
-    }
+    suspend fun applyPreset(preset: ProviderPreset) { store.edit {
+        it[PROVIDER]=preset.id; it[BASE]=preset.defaultBaseUrl
+        it[ASR]=preset.defaultAsrModel; it[LLM]=preset.defaultLlmModel
+    } }
+    suspend fun setApiKey(value: String) { val p=store.data.first(); set(credential(p[BASE] ?: ProviderPreset.STEPFUN.defaultBaseUrl),secrets.encrypt(value.trim())) }
+    suspend fun setBaseUrl(value: String)=set(BASE,value.trim().trimEnd('/'))
+    suspend fun setProviderMode(value: String)=set(PROVIDER,value)
+    suspend fun setAsrModel(value: String)=set(ASR,value.trim())
+    suspend fun setLlmModel(value: String)=set(LLM,value.trim())
+    suspend fun setSystemPrompt(value: String)=set(PROMPT,value)
+    suspend fun setThemeMode(value: String) { require(value in listOf("light","dark","system")); set(THEME,value) }
+    suspend fun setRecordingMode(value: String) { require(value in listOf("lifelog","meeting")); set(MODE,value) }
+    suspend fun setLifelogBitrateKbps(value: Int)=set(BITRATE,value.coerceIn(16,32))
+    suspend fun setMeetingFormat(value: String)=set(FORMAT,value)
+    suspend fun setLaunchStrategy(value: String)=set(STRATEGY,value)
+    suspend fun setHapticEnabled(value: Boolean)=set(HAPTIC,value)
+    suspend fun setAutoResumeAfterCall(value: Boolean)=set(RESUME,value)
+    suspend fun setTriggerDuration(value: Int)=set(TRIGGER,value)
+    suspend fun setLifelogTriggerDuration(value: Int)=set(LIFE_TRIGGER,value.coerceIn(1,10))
+    suspend fun setMeetingTriggerDuration(value: Int)=set(MEETING_TRIGGER,value.coerceIn(2,15))
+    suspend fun setKeepLocalAudio(value: Boolean)=set(KEEP,value)
+    suspend fun getBaseUrlSync()=baseUrl.first()
+    suspend fun getApiKeySync()=apiKey.first()
+    suspend fun getAsrModelSync()=asrModel.first()
+    suspend fun getLlmModelSync()=llmModel.first()
+    suspend fun getSystemPromptSync()=systemPrompt.first()
+    suspend fun isKeepLocalAudioSync()=true
+    suspend fun isHapticEnabledSync()=hapticEnabled.first()
+    suspend fun getRecordingModeSync()=recordingMode.first()
+    suspend fun getLifelogBitrateKbpsSync()=lifelogBitrateKbps.first()
+    suspend fun getMeetingFormatSync()=meetingFormat.first()
+    suspend fun getLaunchStrategySync()=launchStrategy.first()
+    suspend fun getLifelogTriggerDurationSync()=lifelogTriggerDuration.first()
+    suspend fun getMeetingTriggerDurationSync()=meetingTriggerDuration.first()
 }

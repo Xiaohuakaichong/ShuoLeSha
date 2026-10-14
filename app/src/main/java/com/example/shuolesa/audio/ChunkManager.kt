@@ -1,167 +1,67 @@
 package com.example.shuolesa.audio
 
 import android.content.Context
-import android.util.Log
 import com.example.shuolesa.data.db.AudioRecordEntity
-import com.example.shuolesa.data.repository.AudioRepository
-import com.example.shuolesa.util.AppLogger
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import com.example.shuolesa.data.repository.MemoryRepository
 import java.io.File
-import java.util.UUID
+import java.time.LocalDate
+import java.util.Locale
 
-/**
- * 管理 5 分钟标准 WAV 音频分片。
- * 接收麦克风 16kHz PCM 数据，写入高保真无损 WAV 文件。
- */
-class ChunkManager(
-    private val context: Context,
-    private val repository: AudioRepository,
-    private val scope: CoroutineScope,
-    private val recordingMode: String = "lifelog",
-    private val lifelogBitrateKbps: Int = 24,
-    private val meetingFormat: String = "wav",
-) {
+/** PCM samples, not callback count or wall time, determine duration. */
+class ChunkManager(private val context: Context,private val repository: MemoryRepository,
+    val sessionId: String,private val mode: String,private val bitrate: Int=24,private val format: String="wav") {
+    private var wav: WavWriter?=null
+    private var aac: AacWriter?=null
+    private var file: File?=null
+    private var recordId=0L
+    private var samples=0L
+    private var completedSamples=0L
+    private var index=0
+    private var day=LocalDate.now()
+    private var checkpointAt=0L
+    val durationMs get()=(completedSamples+samples)*1000/AudioRecorder.SAMPLE_RATE
+    val savedChunks get()=index
 
-    companion object {
-        private const val TAG = "ChunkManager"
-        const val CHUNK_DURATION_MS = 5 * 60 * 1000L // 5 minutes
-        const val FRAME_DURATION_MS = 60L // 60ms per frame
+    private suspend fun open() {
+        val now=System.currentTimeMillis()
+        day=LocalDate.now()
+        val dir=File(context.filesDir,"recordings").apply { check(mkdirs() || isDirectory) }
+        val compressed=mode=="lifelog" || format=="aac_64k"
+        val ext=if(compressed) "aac" else "wav"
+        val target=File(dir,"${now}_${sessionId}_chunk${String.format(Locale.ROOT,"%03d",index)}.$ext.part")
+        recordId=repository.registerChunk(AudioRecordEntity(sessionId=sessionId,chunkIndex=index,
+            filePath=target.path,durationMs=0,fileSizeBytes=0,createdAt=now,status="WRITING",
+            recordingMode=mode,audioFormat=if(compressed) "aac_${if(mode=="meeting") 64 else bitrate}k" else "wav"))
+        file=target; samples=0; checkpointAt=now
+        if(compressed) aac=AacWriter(target,bitRate=if(mode=="meeting") 64000 else bitrate.coerceIn(16,32)*1000)
+        else wav=WavWriter(target)
     }
-
-    private val sessionId = UUID.randomUUID().toString().take(8)
-    private var chunkIndex = 0
-    private var currentWavWriter: WavWriter? = null
-    private var currentAacWriter: AacWriter? = null
-    private var currentFile: File? = null
-    private var chunkStartTime = 0L
-    private var frameCount = 0L
-    private var totalRecordingStartTime = 0L
-
-    val currentChunkIndex: Int get() = chunkIndex
-    val elapsedMs: Long get() {
-        return if (totalRecordingStartTime > 0) {
-            System.currentTimeMillis() - totalRecordingStartTime
-        } else 0
-    }
-
-    fun startSession() {
-        totalRecordingStartTime = System.currentTimeMillis()
-        openNewChunk()
-    }
-
-    /**
-     * 接收一帧 PCM 数据
-     */
-    fun onPcmFrame(buffer: ShortArray, readCount: Int) {
-        currentWavWriter?.write(buffer, readCount)
-        currentAacWriter?.write(buffer, readCount)
-        frameCount++
-        val elapsedInChunk = frameCount * FRAME_DURATION_MS
-
-        if (elapsedInChunk >= CHUNK_DURATION_MS) {
-            rotateChunk()
+    suspend fun onPcmFrame(pcm: ShortArray,count: Int) {
+        if(file!=null && day!=LocalDate.now()) closeChunk()
+        var offset=0
+        while(offset<count) {
+            if(file==null) open()
+            val n=minOf(count-offset,(MAX_SAMPLES-samples).toInt())
+            wav?.write(pcm,n,offset); aac?.write(pcm,n,offset)
+            samples+=n; offset+=n
+            if(samples>=MAX_SAMPLES) closeChunk()
+        }
+        if(file!=null && System.currentTimeMillis()-checkpointAt>=30_000) {
+            repository.audio.sealChunk(recordId,samples*1000/16000,file!!.length(),"WRITING")
+            checkpointAt=System.currentTimeMillis()
         }
     }
-
-    private fun rotateChunk() {
-        val oldFile = currentFile
-        val oldStartTime = chunkStartTime
-        val durationMs = frameCount * FRAME_DURATION_MS
-        val bytesWritten = currentWavWriter?.finish() ?: currentAacWriter?.finish() ?: 0L
-
-        if (oldFile != null) {
-            registerChunk(oldFile, chunkIndex - 1, oldStartTime, durationMs, bytesWritten)
-        }
-
-        openNewChunk()
+    suspend fun closeChunk() {
+        val partial=file ?: return
+        var failure: Exception?=null
+        try { wav?.finish(); aac?.finish() } catch(e: Exception) { failure=e }
+        val target=File(partial.path.removeSuffix(".part"))
+        if(!partial.renameTo(target)) throw java.io.IOException("录音封存失败，原件已保留")
+        repository.audio.updateFilePath(recordId,target.path)
+        repository.sealChunk(recordId,samples*1000/16000,target.length(),mode=="lifelog")
+        completedSamples+=samples; samples=0; index++
+        file=null; wav=null; aac=null
+        failure?.let { throw it }
     }
-
-    private fun openNewChunk() {
-        val audioDir = File(context.filesDir, "recordings").apply { mkdirs() }
-        val timestamp = System.currentTimeMillis()
-
-        val isAac = when {
-            recordingMode == "lifelog" -> true
-            recordingMode == "meeting" && meetingFormat == "aac_64k" -> true
-            else -> false
-        }
-
-        val ext = if (isAac) "aac" else "wav"
-        val fileName = "${timestamp}_${sessionId}_chunk${String.format("%03d", chunkIndex)}.$ext"
-        val file = File(audioDir, fileName)
-
-        currentFile = file
-        chunkStartTime = timestamp
-        frameCount = 0
-        chunkIndex++
-
-        if (isAac) {
-            val bps = if (recordingMode == "meeting") 64000 else (lifelogBitrateKbps * 1000).coerceIn(16000, 64000)
-            currentAacWriter = AacWriter(file, sampleRate = 16000, bitRate = bps)
-            currentWavWriter = null
-        } else {
-            currentWavWriter = WavWriter(file)
-            currentAacWriter = null
-        }
-    }
-
-    fun finalizeSession(): AudioRecordEntity? {
-        val file = currentFile ?: return null
-        val durationMs = frameCount * FRAME_DURATION_MS
-        val bytesWritten = currentWavWriter?.finish() ?: currentAacWriter?.finish() ?: 0L
-
-        val record = buildRecord(file, chunkIndex - 1, chunkStartTime, durationMs, bytesWritten)
-
-        // 同步写入数据库，避免 Service 停止时取消协程造成漏存或上传竞态
-        runBlocking(Dispatchers.IO) {
-            try {
-                val id = repository.insertRecord(record)
-                AppLogger.d(TAG, "Final chunk registered to DB: id=$id, path=${file.absolutePath}, size=${file.length()}")
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "Failed to register final chunk to DB", e)
-            }
-        }
-
-        currentFile = null
-        currentWavWriter = null
-        currentAacWriter = null
-        totalRecordingStartTime = 0
-        return record
-    }
-
-    private fun buildRecord(file: File, index: Int, startTime: Long, durationMs: Long, sizeBytes: Long): AudioRecordEntity {
-        val fileSize = if (file.exists()) file.length() else sizeBytes
-        val isMeeting = recordingMode == "meeting"
-        val fmt = if (isMeeting) meetingFormat else "aac_${lifelogBitrateKbps}k"
-        val initialTitle = if (isMeeting) "会议录音 #${index + 1}" else "随身生活记录 #${index + 1}"
-        val initialTags = if (isMeeting) "[\"会议\"]" else "[\"随身\"]"
-
-        return AudioRecordEntity(
-            sessionId = sessionId,
-            chunkIndex = index,
-            filePath = file.absolutePath,
-            durationMs = durationMs,
-            fileSizeBytes = fileSize,
-            createdAt = startTime,
-            recordingMode = recordingMode,
-            audioFormat = fmt,
-            title = initialTitle,
-            tags = initialTags,
-        )
-    }
-
-    private fun registerChunk(file: File, index: Int, startTime: Long, durationMs: Long, sizeBytes: Long) {
-        val record = buildRecord(file, index, startTime, durationMs, sizeBytes)
-        scope.launch(Dispatchers.IO) {
-            try {
-                val id = repository.insertRecord(record)
-                AppLogger.d(TAG, "Intermediate chunk registered to DB: id=$id, index=$index")
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "Failed to register intermediate chunk in DB", e)
-            }
-        }
-    }
+    companion object { const val MAX_SAMPLES=16000L*300 }
 }

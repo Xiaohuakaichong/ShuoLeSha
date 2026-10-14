@@ -1,268 +1,331 @@
-import os
+"""Private, bounded OpenAI-compatible gateway. Audio and credentials are never logged."""
+from __future__ import annotations
+
+import base64
+import binascii
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 import json
-import logging
-from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Form, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+import os
+import secrets
+from typing import Any
+from urllib.parse import urlparse
+
 import httpx
-import uvicorn
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse, StreamingResponse
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("shuolesa-server")
+MAX_AUDIO = 16 * 1024 * 1024
+MAX_JSON = 24 * 1024 * 1024
+MAX_RESPONSE = 4 * 1024 * 1024
 
-app = FastAPI(
-    title="说了啥 (ShuoLeSa) 私有中转服务",
-    description="支持 OpenAI 规范的 ASR 语音识别、LLM 笔记提炼与 StepFun 智能代理中转",
-    version="1.0.0",
-)
 
-# 默认配置（可通过环境变量或 .env 覆盖）
-STEPFUN_API_KEY = os.getenv("STEPFUN_API_KEY", "")
-STEPFUN_BASE_URL = os.getenv("STEPFUN_BASE_URL", "https://api.stepfun.com/v1").rstrip("/")
-DEFAULT_ASR_MODEL = os.getenv("DEFAULT_ASR_MODEL", "stepaudio-2.5-asr")
-DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "step-router-v1")
+@dataclass(frozen=True)
+class Settings:
+    base_url: str = "https://api.stepfun.com/step_plan/v1"
+    upstream_key: str = ""
+    gateway_token: str = ""
+    host: str = "127.0.0.1"
+    asr_model: str = "stepaudio-2.5-asr"
+    llm_model: str = "step-router-v1"
 
-@app.get("/")
-def index():
-    return {
-        "service": "ShuoLeSa Backend Gateway",
-        "status": "online",
-        "endpoints": [
-            "/v1/audio/transcriptions",
-            "/v1/chat/completions",
-            "/api/process_voice",
-        ],
-    }
+    @classmethod
+    def from_env(cls) -> Settings:
+        return cls(os.getenv("STEPFUN_BASE_URL", cls.base_url).rstrip("/"),
+                   os.getenv("STEPFUN_API_KEY", ""), os.getenv("GATEWAY_TOKEN", ""),
+                   os.getenv("HOST", "127.0.0.1"),
+                   os.getenv("DEFAULT_ASR_MODEL", cls.asr_model),
+                   os.getenv("DEFAULT_LLM_MODEL", cls.llm_model))
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+    @property
+    def step_plan(self) -> bool:
+        url = urlparse(self.base_url)
+        return url.hostname == "api.stepfun.com" and "/step_plan/" in url.path
 
-@app.post("/v1/audio/asr/sse")
-async def transcribe_audio_sse(
-    request: Request,
-    authorization: Optional[str] = Header(None),
-):
-    """
-    StepFun 专属 SSE 语音识别端点代理
-    """
-    token = authorization.replace("Bearer ", "").strip() if authorization else STEPFUN_API_KEY
+    def validate(self) -> None:
+        if self.host not in {"127.0.0.1", "localhost", "::1"} and not self.gateway_token:
+            raise RuntimeError("LAN binding requires GATEWAY_TOKEN")
+        url = urlparse(self.base_url)
+        if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password:
+            raise RuntimeError("Invalid upstream URL")
+
+
+def credential(settings: Settings, authorization: str | None) -> str:
+    supplied = authorization[7:].strip() if authorization and authorization.startswith("Bearer ") else ""
+    if settings.gateway_token:
+        if not secrets.compare_digest(supplied, settings.gateway_token):
+            raise HTTPException(401, "Invalid gateway credential")
+        token = settings.upstream_key
+    else:
+        token = supplied or settings.upstream_key
     if not token:
-        raise HTTPException(status_code=401, detail="Missing API Key")
+        raise HTTPException(401, "Upstream credential is not configured")
+    return token
 
-    body = await request.json()
-    target_url = f"{STEPFUN_BASE_URL}/audio/asr/sse"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream",
-    }
 
-    client = httpx.AsyncClient(timeout=180.0)
-    req = client.build_request("POST", target_url, headers=headers, json=body)
-    resp = await client.send(req, stream=True)
-    from fastapi.responses import StreamingResponse
-    return StreamingResponse(resp.aiter_raw(), media_type="text/event-stream")
+async def json_body(request: Request) -> dict[str, Any]:
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > MAX_JSON:
+            raise HTTPException(413, "Request is too large")
+    try:
+        body = json.loads(content)
+        if not isinstance(body, dict):
+            raise ValueError()
+        return body
+    except (ValueError, UnicodeError):
+        raise HTTPException(400, "Invalid JSON object") from None
 
-@app.post("/v1/audio/transcriptions")
-async def transcribe_audio(
-    file: UploadFile = File(...),
-    model: str = Form(DEFAULT_ASR_MODEL),
-    authorization: Optional[str] = Header(None),
-):
-    """
-    OpenAI 兼容语音识别端点：
-    直接中转至 StepFun 或其他上游 ASR 服务。
-    """
-    token = authorization.replace("Bearer ", "").strip() if authorization else STEPFUN_API_KEY
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing API Key. Please provide Authorization header or set STEPFUN_API_KEY")
 
-    content = await file.read()
-    logger.info(f"Received audio file: {file.filename}, size: {len(content)} bytes, model: {model}")
+async def read_audio(file: UploadFile) -> bytes:
+    content = bytearray()
+    try:
+        while chunk := await file.read(256 * 1024):
+            content.extend(chunk)
+            if len(content) > MAX_AUDIO:
+                raise HTTPException(413, "Audio exceeds 16 MiB; split it first")
+        if not content:
+            raise HTTPException(400, "Audio is empty")
+        return bytes(content)
+    finally:
+        await file.close()
 
-    target_url = f"{STEPFUN_BASE_URL}/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {token}"}
-    files = {"file": (file.filename or "audio.opus", content, file.content_type or "audio/ogg")}
-    data = {"model": model, "response_format": "json"}
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
+def audio_format(filename: str, content: bytes) -> str:
+    if content.startswith(b"RIFF") and content[8:12] == b"WAVE":
+        return "wav"
+    if content.startswith(b"OggS"):
+        return "ogg"
+    if content.startswith(b"ID3") or (len(content) >= 2 and content[0] == 0xFF and content[1] & 0xE0 == 0xE0 and content[1] & 0x16 != 0x10):
+        return "mp3"
+    if filename.lower().endswith(".pcm"):
+        return "pcm"
+    raise HTTPException(415, "Step Plan accepts WAV, MP3, OGG or PCM. Convert ADTS AAC to WAV first.")
+
+
+def step_payload(content: bytes, kind: str, model: str) -> dict[str, Any]:
+    fmt: dict[str, Any] = {"type": kind}
+    if kind == "pcm":
+        fmt.update(codec="pcm_s16le", rate=16000, bits=16, channel=1)
+    return {"audio": {"data": base64.b64encode(content).decode("ascii"),
+                      "input": {"transcription": {"model": model, "language": "zh", "enable_itn": True}, "format": fmt}}}
+
+
+def validate_step_body(body: dict[str, Any]) -> None:
+    try:
+        audio = body["audio"]
+        encoded = audio["data"]
+        if not isinstance(encoded, str) or len(encoded) > (MAX_AUDIO + 2) // 3 * 4:
+            raise HTTPException(413, "Audio is too large")
+        content = base64.b64decode(encoded, validate=True)
+        if not content or len(content) > MAX_AUDIO:
+            raise HTTPException(400, "Audio is empty or too large")
+        kind = audio["input"]["format"]["type"]
+        if kind not in {"wav", "mp3", "ogg", "pcm"}:
+            raise HTTPException(415, "Unsupported Step Plan audio format")
+        if not isinstance(audio["input"]["transcription"]["model"], str):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError, binascii.Error):
+        raise HTTPException(400, "Expected nested audio.data and audio.input payload") from None
+
+
+def parse_sse(text: str) -> str:
+    final: str | None = None
+    deltas: list[str] = []
+    recognized = False
+    complete = False
+    for line in text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        data = line.removeprefix("data:").strip()
+        if data == "[DONE]":
+            complete = True
+            continue
         try:
-            resp = await client.post(target_url, headers=headers, files=files, data=data)
-            logger.info(f"StepFun ASR status: {resp.status_code}")
-            return JSONResponse(status_code=resp.status_code, content=resp.json())
-        except Exception as e:
-            logger.error(f"Error forwarding transcription to StepFun: {e}")
-            raise HTTPException(status_code=500, detail=f"ASR Proxy error: {str(e)}")
+            event = json.loads(data)
+        except ValueError:
+            continue
+        kind = event.get("type") if isinstance(event, dict) else None
+        if kind == "error" or isinstance(event, dict) and "error" in event:
+            raise HTTPException(502, "Upstream transcription failed")
+        if kind == "transcript.text.done" and isinstance(event.get("text"), str):
+            final = event["text"]
+            recognized = complete = True
+        elif kind == "transcript.text.delta" and isinstance(event.get("delta"), str):
+            deltas.append(event["delta"])
+            recognized = True
+    if not recognized or not complete:
+        raise HTTPException(502, "Incomplete or invalid transcription stream")
+    return (final if final is not None else "".join(deltas)).strip()
 
-@app.post("/v1/chat/completions")
-async def chat_completions(request: Request, authorization: Optional[str] = Header(None)):
-    """
-    OpenAI 兼容聊天补全端点：
-    直接透传至 StepFun 或其他兼容 LLM 模型。
-    """
-    token = authorization.replace("Bearer ", "").strip() if authorization else STEPFUN_API_KEY
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing API Key. Please provide Authorization header or set STEPFUN_API_KEY")
 
-    body = await request.json()
-    logger.info(f"Received chat completion request for model: {body.get('model')}")
+async def upstream(client: httpx.AsyncClient, settings: Settings, token: str, path: str, **kwargs: Any) -> httpx.Response:
+    try:
+        request = client.build_request("POST", settings.base_url + path, headers={"Authorization": f"Bearer {token}"}, **kwargs)
+        response = await client.send(request, stream=True)
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Upstream timed out") from None
+    except httpx.HTTPError:
+        raise HTTPException(502, "Upstream is unavailable") from None
+    if not 200 <= response.status_code < 300:
+        status = response.status_code
+        await response.aclose()
+        raise HTTPException(status if 400 <= status <= 599 else 502, "Upstream request rejected")
+    return response
 
-    target_url = f"{STEPFUN_BASE_URL}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        try:
-            resp = await client.post(target_url, headers=headers, json=body)
-            return JSONResponse(status_code=resp.status_code, content=resp.json())
-        except Exception as e:
-            logger.error(f"Error forwarding chat completion: {e}")
-            raise HTTPException(status_code=500, detail=f"LLM Proxy error: {str(e)}")
+async def bounded_response(response: httpx.Response) -> bytes:
+    data = bytearray()
+    try:
+        async for chunk in response.aiter_bytes():
+            data.extend(chunk)
+            if len(data) > MAX_RESPONSE:
+                raise HTTPException(502, "Upstream response is too large")
+        return bytes(data)
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Upstream timed out") from None
+    except httpx.HTTPError:
+        raise HTTPException(502, "Upstream response was interrupted") from None
+    finally:
+        await response.aclose()
 
-@app.post("/api/process_voice")
-async def process_voice_one_stop(
-    file: UploadFile = File(...),
-    asr_model: str = Form(DEFAULT_ASR_MODEL),
-    llm_model: str = Form(DEFAULT_LLM_MODEL),
-    authorization: Optional[str] = Header(None),
-):
-    """
-    一站式处理接口：
-    一次请求即可完成：音频转写 (优先走 SSE) -> LLM 结构化提取 (title, summary, action_items, tags)。
-    """
-    token = authorization.replace("Bearer ", "").strip() if authorization else STEPFUN_API_KEY
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing API Key")
 
-    content = await file.read()
-    import base64
-    base64_audio = base64.b64encode(content).decode("utf-8")
+async def response_json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        value = json.loads(await bounded_response(response))
+        if not isinstance(value, dict):
+            raise ValueError()
+        return value
+    except (ValueError, UnicodeError):
+        raise HTTPException(502, "Invalid upstream JSON response") from None
 
-    # Step 1: Transcribe via SSE
-    target_asr_url = f"{STEPFUN_BASE_URL}/audio/asr/sse"
-    sse_payload = {
-        "model": asr_model,
-        "audio": base64_audio,
-        "format": {"type": "ogg"},
-        "enable_itn": True,
-    }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream",
-    }
 
-    transcription = ""
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        try:
-            async with client.stream("POST", target_asr_url, headers=headers, json=sse_payload) as resp:
-                if resp.status_code == 200:
-                    text_parts = []
-                    async for line in resp.aiter_lines():
-                        if line.startswith("data:"):
-                            data_str = line.removePrefix("data:").strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                j = json.loads(data_str)
-                                if "data" in j:
-                                    text_parts.append(j["data"])
-                                elif "text" in j:
-                                    transcription = j["text"]
-                            except Exception:
-                                pass
-                    if not transcription:
-                        transcription = "".join(text_parts).strip()
-        except Exception as e:
-            logger.error(f"SSE ASR failed, trying fallback: {e}")
+async def transcribe(client: httpx.AsyncClient, settings: Settings, token: str, content: bytes, filename: str, model: str) -> str:
+    if settings.step_plan:
+        response = await upstream(client, settings, token, "/audio/asr/sse", json=step_payload(content, audio_format(filename, content), model))
+        data = await bounded_response(response)
+        return parse_sse(data.decode("utf-8"))
+    response = await upstream(client, settings, token, "/audio/transcriptions",
+                              files={"file": (os.path.basename(filename), content, "application/octet-stream")},
+                              data={"model": model, "response_format": "json"})
+    result = await response_json(response)
+    if not isinstance(result.get("text"), str):
+        raise HTTPException(502, "Transcription response has no text field")
+    return result["text"].strip()
 
-    # Fallback to standard multipart if SSE was empty
-    if not transcription:
-        target_multipart_url = f"{STEPFUN_BASE_URL}/audio/transcriptions"
-        headers_multi = {"Authorization": f"Bearer {token}"}
-        files = {"file": (file.filename or "audio.opus", content, file.content_type or "audio/ogg")}
-        data = {"model": asr_model, "response_format": "json"}
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            asr_resp = await client.post(target_multipart_url, headers=headers_multi, files=files, data=data)
-            if asr_resp.status_code == 200:
-                transcription = asr_resp.json().get("text", "")
 
-    if not transcription:
-        raise HTTPException(status_code=400, detail="Audio transcription returned empty text")
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
 
-    # Step 2: LLM Structuring with Speaker Inference & Action Items
-    system_prompt = """你是一个专业的随身语音秘书与会议纪要分析专家。
-请根据录音文字稿，若语境呈现多人交谈、访谈或会议，请智能推断说话人角色（如【发言人A】、【发言人B】或称呼），并将文字整理为对白或分段。
-请输出标准合法的纯 JSON 字符串，格式如下：
-{
-  "title": "简明凝练的标题（12字以内）",
-  "summary": "核心要点提炼（2-3句话，清晰明了）",
-  "action_items": [
-    {"text": "待办事项1", "done": false},
-    {"text": "待办事项2", "done": false}
-  ],
-  "tags": ["工作", "日常"],
-  "structured_transcript": "【发言人A】：...\n\n【发言人B】：..."
-}
-注意：只输出合法 JSON，不要带有 markdown 标记或任何闲聊文本。"""
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        settings.validate()
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=20), follow_redirects=False,
+                                     limits=httpx.Limits(max_connections=16, max_keepalive_connections=8)) as client:
+            app.state.client = client
+            yield
 
-    llm_payload = {
-        "model": llm_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"录音文字稿：\n{transcription}"},
-        ],
-        "temperature": 0.2,
-    }
+    app = FastAPI(title="说了啥私有网关", version="4.0", lifespan=lifespan)
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        try:
-            llm_resp = await client.post(
-                f"{STEPFUN_BASE_URL}/chat/completions",
-                headers=headers,
-                json=llm_payload,
-            )
-            if llm_resp.status_code != 200:
-                return {
-                    "transcription": transcription,
-                    "summary": transcription,
-                    "title": "随手语音",
-                    "action_items": [],
-                    "tags": ["语音"],
-                    "structured_transcript": transcription,
-                }
+    @app.middleware("http")
+    async def size_guard(request: Request, call_next):
+        if request.client and request.client.host not in {"127.0.0.1", "::1", "localhost", "testclient"} and not settings.gateway_token:
+            return JSONResponse({"detail": "Remote access requires a gateway credential"}, status_code=403)
+        length = request.headers.get("content-length", "")
+        if length.isdigit() and int(length) > MAX_JSON:
+            return JSONResponse({"detail": "Request is too large"}, status_code=413)
+        if request.method == "POST":
+            data = bytearray()
+            async for chunk in request.stream():
+                data.extend(chunk)
+                if len(data) > MAX_JSON:
+                    return JSONResponse({"detail": "Request is too large"}, status_code=413)
+            request._body = bytes(data)
+        return await call_next(request)
 
-            llm_content = llm_resp.json()["choices"][0]["message"]["content"]
-            clean_json = llm_content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    @app.get("/")
+    @app.get("/health")
+    async def health():
+        return {"service": "ShuoLeSha", "status": "ok", "version": "4.0"}
 
+    @app.post("/v1/audio/asr/sse")
+    async def asr_sse(request: Request, authorization: str | None = Header(None)):
+        token = credential(settings, authorization)
+        body = await json_body(request)
+        validate_step_body(body)
+        response = await upstream(app.state.client, settings, token, "/audio/asr/sse", json=body)
+        async def stream():
+            size = 0
             try:
-                parsed = json.loads(clean_json)
-            except Exception:
-                parsed = {
-                    "title": "随手语音",
-                    "summary": clean_json,
-                    "action_items": [],
-                    "tags": ["语音"],
-                    "structured_transcript": transcription,
-                }
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_RESPONSE:
+                        yield b'data: {"type":"error","message":"response limit"}\n\n'
+                        return
+                    yield chunk
+            except httpx.HTTPError:
+                yield b'data: {"type":"error","message":"upstream interrupted"}\n\n'
+            finally:
+                await response.aclose()
+        return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
-            if "structured_transcript" not in parsed or not parsed["structured_transcript"]:
-                parsed["structured_transcript"] = transcription
-            parsed["transcription"] = parsed["structured_transcript"]
-            return parsed
-        except Exception as e:
-            logger.error(f"Error in LLM processing: {e}")
-            return {
-                "transcription": transcription,
-                "summary": transcription,
-                "title": "随手语音",
-                "action_items": [],
-                "tags": ["语音"],
-                "structured_transcript": transcription,
-            }
+    @app.post("/v1/audio/transcriptions")
+    async def transcription(file: UploadFile = File(...), model: str = Form(settings.asr_model), authorization: str | None = Header(None)):
+        token = credential(settings, authorization)
+        name = file.filename or "audio"
+        content = await read_audio(file)
+        text = await transcribe(app.state.client, settings, token, content, name, model)
+        return {"text": text}
+
+    @app.post("/v1/chat/completions")
+    async def chat(request: Request, authorization: str | None = Header(None)):
+        token = credential(settings, authorization)
+        body = await json_body(request)
+        if body.get("stream"):
+            raise HTTPException(400, "This endpoint accepts non-streaming chat requests")
+        if not isinstance(body.get("messages"), list) or not body.get("model"):
+            raise HTTPException(400, "Model and messages are required")
+        response = await upstream(app.state.client, settings, token, "/chat/completions", json=body)
+        return await response_json(response)
+
+    @app.post("/api/process_voice")
+    async def process_voice(file: UploadFile = File(...), asr_model: str = Form(settings.asr_model),
+                            llm_model: str = Form(settings.llm_model), authorization: str | None = Header(None)):
+        token = credential(settings, authorization)
+        name = file.filename or "audio"
+        content = await read_audio(file)
+        raw = await transcribe(app.state.client, settings, token, content, name, asr_model)
+        if not raw:
+            return {"transcription": "", "processing_state": "SILENCE", "derived": None}
+        payload = {"model": llm_model, "temperature": 0.1, "response_format": {"type": "json_object"},
+                   "messages": [{"role": "system", "content": '只依据原稿输出 JSON：{"title":"标题","summary":"事实要点","action_items":[{"text":"明确承诺","quote":"逐字原句"}]}。不推断真人身份，不补充新待办。'},
+                                {"role": "user", "content": raw}]}
+        try:
+            response = await upstream(app.state.client, settings, token, "/chat/completions", json=payload)
+            body = await response_json(response)
+            derived = json.loads(body["choices"][0]["message"]["content"])
+            if not isinstance(derived, dict) or not isinstance(derived.get("summary"), str):
+                raise ValueError()
+            items = derived.get("action_items", [])
+            if not isinstance(items, list):
+                raise ValueError()
+            derived["action_items"] = [dict(item, state="CANDIDATE") for item in items if isinstance(item, dict)
+                                       and isinstance(item.get("text"), str) and isinstance(item.get("quote"), str)
+                                       and item["quote"] and item["quote"] in raw]
+            derived.pop("structured_transcript", None)
+            return {"transcription": raw, "processing_state": "READY", "derived": derived}
+        except (HTTPException, ValueError, KeyError, IndexError, TypeError):
+            return JSONResponse({"transcription": raw, "processing_state": "DERIVATION_FAILED", "derived": None,
+                                 "error": "Original transcript preserved; retry derivation separately"}, status_code=202)
+
+    return app
+
+
+app = create_app()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicorn
+    config = Settings.from_env()
+    config.validate()
+    uvicorn.run(app, host=config.host, port=int(os.getenv("PORT", "8000")))
