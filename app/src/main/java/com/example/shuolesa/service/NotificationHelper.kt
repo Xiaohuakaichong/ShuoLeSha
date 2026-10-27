@@ -81,7 +81,7 @@ class NotificationHelper(private val context: Context) {
                 NotificationCompat.BigTextStyle()
                     .bigText(if(paused) "录音已暂停。可继续录音或停止并保存。" else "正在录音。听到重点可点「标记」，之后在原话里直接找到。"),
             )
-            .setSmallIcon(R.drawable.ic_mic)
+            .setSmallIcon(R.drawable.ic_notify_ceer)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)

@@ -13,4 +13,6 @@
     <color name="widget_on_record">#3B0A0C</color>
     <color name="widget_orb">#6CD6BC</color>
     <color name="widget_on_orb">#00382E</color>
+    <color name="spirit_ink">#E6EAE7</color>
+    <color name="spirit_paper">#161C1A</color>
 </resources>

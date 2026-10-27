@@ -27,8 +27,9 @@ class RecordWidgetProvider : AppWidgetProvider() {
             val state = AudioCaptureService.state.value
             val views = RemoteViews(context.packageName, R.layout.widget_record)
             if (!state.active) {
-                views.setImageViewResource(R.id.rec_orb_bg, R.drawable.widget_orb)
-                views.setImageViewResource(R.id.rec_orb_icon, R.drawable.ic_w_mic_on_orb)
+                views.setImageViewResource(R.id.rec_orb_bg, R.drawable.widget_orb_mint)
+                views.setViewVisibility(R.id.rec_orb_spirit, View.VISIBLE)
+                views.setViewVisibility(R.id.rec_orb_icon, View.GONE)
                 views.setTextViewText(R.id.rec_title, "开始录音")
                 views.setTextViewText(R.id.rec_sub, "点一下，随身记录")
                 views.setViewVisibility(R.id.rec_sub, View.VISIBLE)
@@ -42,6 +43,8 @@ class RecordWidgetProvider : AppWidgetProvider() {
             }
             val paused = state.phase == CapturePhase.PAUSED
             views.setImageViewResource(R.id.rec_orb_bg, R.drawable.widget_orb_record)
+            views.setViewVisibility(R.id.rec_orb_spirit, View.GONE)
+            views.setViewVisibility(R.id.rec_orb_icon, View.VISIBLE)
             views.setImageViewResource(R.id.rec_orb_icon, R.drawable.ic_w_stop_on_record)
             views.setTextViewText(R.id.rec_title, "${state.modeLabel}${if (paused) "已暂停" else "录音中"}")
             views.setViewVisibility(R.id.rec_sub, View.GONE)

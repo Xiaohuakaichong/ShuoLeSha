@@ -18,14 +18,22 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:importantForAccessibility="no"
-            android:src="@drawable/widget_orb" />
+            android:src="@drawable/widget_orb_mint" />
+        <ImageView
+            android:id="@+id/rec_orb_spirit"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/tile_record_label"
+            android:src="@drawable/ic_spirit_on_mint" />
         <ImageView
             android:id="@+id/rec_orb_icon"
             android:layout_width="26dp"
             android:layout_height="26dp"
             android:layout_gravity="center"
             android:contentDescription="@string/tile_record_label"
-            android:src="@drawable/ic_w_mic_on_orb" />
+            android:src="@drawable/ic_w_stop_on_record"
+            android:visibility="gone" />
     </FrameLayout>
 
     <LinearLayout

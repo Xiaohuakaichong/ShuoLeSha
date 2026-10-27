@@ -65,7 +65,8 @@ class TodoWidgetProvider : AppWidgetProvider() {
             adapter.data = Uri.parse(adapter.toUri(Intent.URI_INTENT_SCHEME))
             views.setRemoteAdapter(R.id.todo_list, adapter)
             views.setEmptyView(R.id.todo_list, R.id.todo_empty)
-            views.setTextViewText(R.id.todo_empty, if (candidates > 0) "没有待办，有 $candidates 项等你确认" else "待办都处理好了")
+            views.setTextViewText(R.id.todo_empty_text, if (candidates > 0) "没有待办，有 $candidates 项等你确认" else "待办都处理好了")
+            views.setImageViewResource(R.id.todo_empty_spirit, if (candidates > 0) R.drawable.ic_spirit_idle else R.drawable.ic_spirit_happy)
             // Fill-in intents carry the task id; the template has to be mutable for that.
             views.setPendingIntentTemplate(R.id.todo_list, PendingIntent.getBroadcast(context, 300,
                 Intent(context, TodoWidgetProvider::class.java).setAction(ACTION_TOGGLE), PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))

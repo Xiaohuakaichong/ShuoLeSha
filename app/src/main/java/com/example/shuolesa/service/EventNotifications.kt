@@ -46,7 +46,7 @@ object EventNotifications {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val text = if (candidates > 0) "有 $candidates 项待办候选，确认后才会加入待办" else "要点已整理好，可以搜索和回听"
             NotificationManagerCompat.from(context).notify(ID_ORGANISED, NotificationCompat.Builder(context, CHANNEL)
-                .setSmallIcon(R.drawable.ic_mic).setContentTitle("「$title」整理完成").setContentText(text)
+                .setSmallIcon(R.drawable.ic_notify_ceer).setContentTitle("「$title」整理完成").setContentText(text)
                 .setContentIntent(open).setAutoCancel(true).build())
         }
     }
@@ -71,7 +71,7 @@ object EventNotifications {
                 val never = PendingIntent.getBroadcast(context, 3, Intent(context, BlindHintReceiver::class.java),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 NotificationManagerCompat.from(context).notify(ID_BLIND, NotificationCompat.Builder(context, CHANNEL)
-                    .setSmallIcon(R.drawable.ic_mic).setContentTitle("录音没能在后台开始")
+                    .setSmallIcon(R.drawable.ic_notify_ceer).setContentTitle("录音没能在后台开始")
                     .setContentText("系统限制了后台启动。点这里马上开始随身录音。")
                     .setContentIntent(start).setAutoCancel(true)
                     .addAction(0, "开始录音", start).addAction(0, "以后不提示", never).build())

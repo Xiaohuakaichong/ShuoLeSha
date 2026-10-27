@@ -25,7 +25,7 @@ object ConsentLauncher {
                 nm.createNotificationChannel(NotificationChannel(CHANNEL, "隐私同意", NotificationManager.IMPORTANCE_DEFAULT))
             val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val notification = NotificationCompat.Builder(context, CHANNEL)
-                .setSmallIcon(com.example.shuolesa.R.drawable.ic_mic) // app's monochrome mic
+                .setSmallIcon(com.example.shuolesa.R.drawable.ic_notify_ceer)
                 .setContentTitle("使用快捷录音前，需要先同意隐私政策")
                 .setContentText("点此打开说了啥完成同意，录音不会自动开始")
                 .setContentIntent(pending).setAutoCancel(true).build()

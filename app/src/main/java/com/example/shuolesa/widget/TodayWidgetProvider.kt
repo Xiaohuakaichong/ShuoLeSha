@@ -39,6 +39,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
                 val digest = app.repository.dao.observeDigests().first().find { it.date == today.toString() }
                 val latest = sessions.firstOrNull() // ordered newest first
                 val views = RemoteViews(context.packageName, R.layout.widget_today)
+                views.setImageViewResource(R.id.today_spirit, when { digest != null -> R.drawable.ic_spirit_happy; sessions.isEmpty() -> R.drawable.ic_spirit_sleep; else -> R.drawable.ic_spirit_idle })
                 views.setTextViewText(R.id.today_date, today.format(DateTimeFormatter.ofPattern("M月d日")))
                 views.setTextViewText(R.id.today_stat, if (sessions.isEmpty()) "今天还没有记录" else "${sessions.size} 条 · ${sessions.sumOf { it.durationMs } / 60_000} 分钟")
                 val title: String?
