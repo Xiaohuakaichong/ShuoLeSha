@@ -48,7 +48,7 @@ import com.example.shuolesa.util.PermissionHelper
             when(page) {
                 "home"->{
                     item { Panel(color=MaterialTheme.colorScheme.primaryContainer) { Row(verticalAlignment=Alignment.CenterVertically) {
-                        Box(Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface),contentAlignment=Alignment.Center) { Ceer(CeerPose.IDLE,Modifier.size(40.dp)) }
+                        Ceer(CeerPose.IDLE,Modifier.size(84.dp),interactive=true)
                         Column(Modifier.padding(start=16.dp)) {
                             Text("说了啥",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onPrimaryContainer)
                             Text("找回说过的话 · v${BuildConfig.VERSION_NAME}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f)) } } } }

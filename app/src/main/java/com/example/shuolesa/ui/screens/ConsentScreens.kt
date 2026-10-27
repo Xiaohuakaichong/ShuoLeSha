@@ -68,8 +68,7 @@ import com.example.shuolesa.ui.components.*
     ConsentFrame(step,total,content={
         // v4.1-a.1: opened from the tile / volume-key trigger before consent. No recording, no error.
         if(fromShortcut) Meta("使用快捷录音前，需要先同意隐私政策")
-        Box(Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer).align(Alignment.CenterHorizontally),contentAlignment=Alignment.Center) {
-            Ceer(CeerPose.IDLE,Modifier.size(60.dp)) }
+        Ceer(CeerPose.IDLE,Modifier.size(132.dp).align(Alignment.CenterHorizontally),interactive=true)
         Text("先说清楚你的数据",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.align(Alignment.CenterHorizontally))
         Fact(Icons.Outlined.Lock,"原音只存在这台手机里","录音文件不会自动上传，删除后无法恢复。")
         Fact(Icons.Outlined.CloudUpload,"转写时才会发送","开启转写后，原音和原话会发给你选择的服务，之后单独确认。")

@@ -474,6 +474,7 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
 
 @Composable private fun CaptureOrb(pose:CeerPose,level:Float,live:Boolean,small:Boolean) {
     val primary=MaterialTheme.colorScheme.primary
+    val brand=com.example.shuolesa.theme.LocalBrandColors.current
     val smooth by androidx.compose.animation.core.animateFloatAsState((level*4f).coerceIn(0f,1f),androidx.compose.animation.core.tween(140),label="level")
     val breathe=if(live) {
         val value by androidx.compose.animation.core.rememberInfiniteTransition(label="breathe").animateFloat(0f,1f,
@@ -483,13 +484,14 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
     val box=if(small) 168.dp else 232.dp
     Box(Modifier.size(box),contentAlignment=Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            // The widest ring (2.4 × base) is exactly the box, so the glow never clips or reaches the text below.
+            // The widest ring (2.5 × base) is exactly the box, so the glow never clips or reaches the text below.
             val base=this.size.minDimension*0.2f
-            if(live) { drawCircle(primary.copy(alpha=0.10f+0.06f*breathe),base*(1.8f+0.5f*smooth+0.1f*breathe));drawCircle(primary.copy(alpha=0.16f),base*(1.45f+0.3f*smooth)) }
-            else drawCircle(primary.copy(alpha=0.08f),base*1.6f)
-            drawCircle(primary,base)
+            if(live) { drawCircle(primary.copy(alpha=0.10f+0.06f*breathe),base*(1.95f+0.45f*smooth+0.1f*breathe));drawCircle(primary.copy(alpha=0.16f),base*(1.7f+0.25f*smooth)) }
+            else drawCircle(primary.copy(alpha=0.08f),base*1.8f)
+            drawCircle(primary,base*1.5f)
         }
-        Ceer(pose,Modifier.size(box*0.3f),body=MaterialTheme.colorScheme.onPrimary,eye=primary)
+        // v5.1: always the black-ink spirit, on the mint orb; the glow replaces its own ripple
+        Ceer(pose,Modifier.size(box*0.66f),ink=brand.stage,paper=brand.onStage,accent=primary,energy=smooth,rings=false,interactive=true)
     }
 }
 @Composable private fun StageButton(icon:androidx.compose.ui.graphics.vector.ImageVector,label:String,enabled:Boolean,onClick:()->Unit) {

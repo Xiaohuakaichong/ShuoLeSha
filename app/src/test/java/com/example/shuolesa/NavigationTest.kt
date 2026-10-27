@@ -10,6 +10,8 @@ import com.example.shuolesa.ui.navigation.AppNavigation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Rule
+import androidx.compose.runtime.CompositionLocalProvider
+import com.example.shuolesa.ui.components.LocalCeerMotion
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -25,7 +27,8 @@ class NavigationTest {
         runBlocking {withTimeout(10000) {app.awaitReady()}
             // v4.1: skip the consent gate (covered by its own tests)
             app.preferences.setPrivacyConsent(true);app.preferences.setOnboardingDone(true)}
-        compose.setContent {ShuoLeSaTheme {AppNavigation(app)}}
+        // v5.1: the ink spirit runs a frame loop; the test clock would wait for it forever, so it is drawn once instead
+        compose.setContent {CompositionLocalProvider(LocalCeerMotion provides false) {ShuoLeSaTheme {AppNavigation(app)}}}
         compose.onNodeWithContentDescription("开始录音").assertIsDisplayed()
         compose.onNodeWithText("把说过的话留在这里").assertIsDisplayed()
         // v5.0: the dock shows a label only on the selected tab, so tabs are found by their accessibility description

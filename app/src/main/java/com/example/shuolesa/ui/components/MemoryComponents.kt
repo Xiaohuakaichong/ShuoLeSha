@@ -79,8 +79,7 @@ import com.example.shuolesa.ui.logic.*
 }
 @Composable fun EmptyState(title:String,description:String,pose:CeerPose=CeerPose.SLEEP,action:String?=null,onAction:()->Unit={}) {
     Column(Modifier.fillMaxWidth().padding(horizontal=32.dp,vertical=40.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(104.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),contentAlignment=Alignment.Center) { Ceer(pose,Modifier.size(64.dp)) }
-        Spacer(Modifier.height(4.dp))
+        Ceer(pose,Modifier.size(120.dp),interactive=true)
         Text(title,style=MaterialTheme.typography.titleMedium)
         Text(description,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
         action?.let { FilledTonalButton(onClick=onAction) { Text(it) } }

@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.shuolesa"
         minSdk = 29
         targetSdk = 36
-        versionCode = 32
-        versionName = "5.0"
+        versionCode = 33
+        versionName = "5.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

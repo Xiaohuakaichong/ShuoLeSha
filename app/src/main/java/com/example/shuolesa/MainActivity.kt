@@ -38,14 +38,14 @@ class MainActivity:ComponentActivity() {
             val mode by app.preferences.themeMode.collectAsStateWithLifecycle("system")
             val systemDark=isSystemInDarkTheme();val dark=if(mode=="system") systemDark else mode=="dark"
             SideEffect {WindowCompat.getInsetsController(window,window.decorView).apply {isAppearanceLightStatusBars=!dark;isAppearanceLightNavigationBars=!dark}}
-            ShuoLeSaTheme(dark) {
+            ShuoLeSaTheme(dark) { GazeHost {
                 val initialization by app.initialization.collectAsStateWithLifecycle()
                 when(val state=initialization) {
                     Initialization.Ready->AppNavigation(app)
-                    Initialization.Loading->Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().safeDrawingPadding(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {Ceer(CeerPose.THINKING,Modifier.size(72.dp));Spacer(Modifier.height(16.dp));Text("正在打开记忆库",style=MaterialTheme.typography.titleMedium);Spacer(Modifier.height(16.dp));CircularProgressIndicator(Modifier.size(28.dp),strokeWidth=3.dp)} }
+                    Initialization.Loading->Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().safeDrawingPadding(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {Ceer(CeerPose.THINKING,Modifier.size(104.dp));Spacer(Modifier.height(16.dp));Text("正在打开记忆库",style=MaterialTheme.typography.titleMedium);Spacer(Modifier.height(16.dp));CircularProgressIndicator(Modifier.size(28.dp),strokeWidth=3.dp)} }
                     is Initialization.Failed->Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {EmptyState("记忆库未能打开",state.message,CeerPose.ERROR)}
                 }
-            }
+            } }
         }
     }
     override fun onStart() { super.onStart();AppContainer.from(this).onForeground() }

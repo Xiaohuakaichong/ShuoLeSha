@@ -3,6 +3,7 @@ package com.example.shuolesa
 import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -37,7 +38,7 @@ class UiInteractionTest {
         compose.runOnIdle {assertEquals(ref,opened)}
     }
     @Test fun ceerStatesHaveAccessibleLabelsInBothThemes() {
-        compose.setContent {ShuoLeSaTheme(true) {Column {CeerPose.entries.forEach {Ceer(it,Modifier.size(40.dp))}}}}
+        compose.setContent {CompositionLocalProvider(LocalCeerMotion provides false) {ShuoLeSaTheme(true) {Column {CeerPose.entries.forEach {Ceer(it,Modifier.size(40.dp))}}}}}
         CeerPose.entries.forEach {compose.onNodeWithContentDescription(it.label).assertExists()}
     }
 }
