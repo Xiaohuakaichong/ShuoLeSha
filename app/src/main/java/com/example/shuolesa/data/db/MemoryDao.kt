@@ -26,6 +26,15 @@ interface MemoryDao {
     suspend fun recoverCapture(now: Long)
     @Query("DELETE FROM recording_sessions WHERE id=:id")
     suspend fun deleteSession(id: String)
+    @Query("UPDATE recording_sessions SET speakerNamesJson=:json WHERE id=:id")
+    suspend fun setSpeakerNames(id: String, json: String?)
+
+    @Insert
+    suspend fun insertMark(mark: CaptureMarkEntity): Long
+    @Query("SELECT offsetMs FROM capture_marks WHERE sessionId=:id ORDER BY offsetMs")
+    suspend fun marksForSession(id: String): List<Long>
+    @Query("DELETE FROM capture_marks WHERE sessionId=:id")
+    suspend fun deleteMarks(id: String)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTranscript(transcript: TranscriptEntity): Long
@@ -40,6 +49,9 @@ interface MemoryDao {
     suspend fun sourcesForSession(id: String): List<TranscriptSource>
     @Query("SELECT t.rowid AS chunkId,t.text,t.provenance,a.createdAt,a.sessionId,a.recordingMode FROM transcripts t JOIN audio_records a ON a.id=t.rowid WHERE a.createdAt>=:start AND a.createdAt<:end ORDER BY a.createdAt")
     suspend fun sourcesForDay(start: Long, end: Long): List<TranscriptSource>
+    /** v4.1.1: one query for the detail page instead of one full-text read per chunk. */
+    @Query("SELECT t.rowid AS chunkId,t.segmentsJson FROM transcripts t JOIN audio_records a ON a.id=t.rowid WHERE a.sessionId=:id")
+    suspend fun segmentsForSession(id: String): List<TranscriptSegments>
     @Query("SELECT t.rowid AS chunkId,t.text,t.provenance,a.createdAt,a.sessionId,a.recordingMode FROM transcripts t JOIN audio_records a ON a.id=t.rowid WHERE a.createdAt>=:start AND a.createdAt<:end AND (:mode='all' OR a.recordingMode=:mode) AND instr(lower(t.text),lower(:term))>0 ORDER BY a.createdAt DESC LIMIT :limit")
     suspend fun searchSubstring(term: String, start: Long, end: Long, mode: String, limit: Int = 60): List<TranscriptSource>
     @Query("SELECT t.rowid AS chunkId,t.text,t.provenance,a.createdAt,a.sessionId,a.recordingMode FROM transcripts t JOIN audio_records a ON a.id=t.rowid JOIN transcripts_fts f ON f.rowid=t.rowid WHERE transcripts_fts MATCH :term AND a.createdAt>=:start AND a.createdAt<:end AND (:mode='all' OR a.recordingMode=:mode) ORDER BY a.createdAt DESC LIMIT :limit")
@@ -84,6 +96,11 @@ interface MemoryDao {
     fun observeTasks(): Flow<List<TaskEntity>>
     @Query("SELECT * FROM action_tasks WHERE sessionId=:id")
     suspend fun tasksForSession(id: String): List<TaskEntity>
+    /** v5.0: for the 待办 widget (one-shot reads, newest first). */
+    @Query("SELECT * FROM action_tasks WHERE state=:state ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun tasksByState(state: String, limit: Int): List<TaskEntity>
+    @Query("SELECT COUNT(*) FROM action_tasks WHERE state=:state")
+    suspend fun taskCount(state: String): Int
     @Query("UPDATE action_tasks SET state=:next WHERE id=:id AND state=:expected")
     suspend fun transitionTask(id: String, expected: String, next: String): Int
     @Query("UPDATE action_tasks SET sessionId=NULL,sourcesJson='[]',sourceDeleted=1 WHERE sessionId=:id AND state IN ('ACTIVE','DONE')")
@@ -109,6 +126,9 @@ interface MemoryDao {
     suspend fun recoverJobs(owner: String)
     @Query("UPDATE processing_jobs SET state='PENDING',attempts=0,error=NULL,owner=NULL WHERE state IN ('FAILED','WAITING_CONFIG','WAITING_NETWORK','WAITING_DEPENDENCY')")
     suspend fun retryJobs()
+    /** v4.1: retry one record (单条重试): its session-level jobs and its chunks' ASR/MAP jobs. */
+    @Query("UPDATE processing_jobs SET state='PENDING',attempts=0,error=NULL,owner=NULL WHERE state IN ('FAILED','WAITING_CONFIG','WAITING_NETWORK','WAITING_DEPENDENCY') AND (subjectId=:sessionId OR (kind IN ('ASR','MAP') AND subjectId IN (SELECT CAST(id AS TEXT) FROM audio_records WHERE sessionId=:sessionId)))")
+    suspend fun retryJobsForSession(sessionId: String)
 
     @Query("UPDATE processing_jobs SET state='PENDING',error=NULL WHERE state='WAITING_NETWORK' OR (:configurationChanged AND state='WAITING_CONFIG')")
     suspend fun wakeWaiting(configurationChanged: Boolean)
@@ -133,4 +153,10 @@ interface MemoryDao {
     suspend fun wakeDependencies()
     @Query("UPDATE processing_jobs SET state='PENDING',error=NULL WHERE id=:id AND state='WAITING_NETWORK'")
     suspend fun wakeNetworkJob(id: String)
+    /**
+     * v4.1.1: latest finished MAP result for one chunk, any revision. Transcripts are immutable, so it maps
+     * exactly the text a daily digest would map again; the digest reuses it instead of another model call.
+     */
+    @Query("SELECT resultJson FROM processing_jobs WHERE kind='MAP' AND subjectId=:chunkId AND state='COMPLETE' AND resultJson IS NOT NULL ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun latestMapResult(chunkId: String): String?
 }

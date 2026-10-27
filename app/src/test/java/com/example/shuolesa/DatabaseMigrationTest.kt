@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import org.json.JSONObject
 import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
@@ -36,7 +37,7 @@ class DatabaseMigrationTest {
         return name to audio
     }
     private fun open(name:String)=Room.databaseBuilder(context,AppDatabase::class.java,name)
-        .addMigrations(AppDatabase.MIGRATION_3_4,AppDatabase.MIGRATION_4_5,AppDatabase.MIGRATION_5_6).build()
+        .addMigrations(AppDatabase.MIGRATION_3_4,AppDatabase.MIGRATION_4_5,AppDatabase.MIGRATION_5_6,AppDatabase.MIGRATION_6_7,AppDatabase.MIGRATION_7_8).build()
     @Test fun freshV5AndMigratedDefaultsBothPreserveRowsAndTasks()=runBlocking {
         listOf(3 to false,4 to true,5 to false,5 to true).forEach { (version,default)->
             val(name,audio)=fixture(version,default);val db=open(name)
@@ -58,6 +59,70 @@ class DatabaseMigrationTest {
                 assertEquals(42,dao.searchSubstring("交付",0,Long.MAX_VALUE,"all").single().chunkId)
             } finally {db.close();context.deleteDatabase(name);audio.delete()}
         }
+    }
+    /** v4.1-a: schema 6 (exact V4 createSql from 6.json) -> 7 keeps rows, adds nullable transcripts.segmentsJson. */
+    @Test fun v6ToV7AddsNullableSegmentsJsonAndKeepsData()=runBlocking {
+        val schema=listOf("schemas","app/schemas").map { File(it,"com.example.shuolesa.data.db.AppDatabase/6.json") }.first { it.exists() }
+        val database=JSONObject(schema.readText()).getJSONObject("database")
+        val name="v6-${UUID.randomUUID()}";val path=context.getDatabasePath(name);path.parentFile!!.mkdirs()
+        SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->
+            val entities=database.getJSONArray("entities")
+            for(i in 0 until entities.length()) { val entity=entities.getJSONObject(i);val table=entity.getString("tableName")
+                db.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}",table))
+                entity.optJSONArray("indices")?.let { idx -> for(j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}",table)) }
+            }
+            val setup=database.getJSONArray("setupQueries");for(i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO audio_records (id,sessionId,chunkIndex,filePath,durationMs,fileSizeBytes,createdAt,status,retryCount,recordingMode) VALUES (7,'s6',0,'/x.wav',1000,10,1791936000000,'TRANSCRIBED',0,'meeting')")
+            db.execSQL("INSERT INTO recording_sessions VALUES ('s6','meeting',1791936000000,NULL,1000,'会议录音','CLOSED','READY',0,NULL,NULL)")
+            db.execSQL("INSERT INTO transcripts (rowid,text,provenance,createdAt) VALUES (7,'下周三评审接口。','ASR',1791936000000)")
+            db.execSQL("INSERT INTO transcripts_fts(transcripts_fts) VALUES('rebuild')")
+            db.version=6
+        }
+        val room=open(name)
+        try {
+            room.openHelper.writableDatabase.query("PRAGMA table_info(transcripts)").use { c ->
+                var found=false;while(c.moveToNext()) if(c.getString(c.getColumnIndexOrThrow("name"))=="segmentsJson") {found=true;assertEquals(0,c.getInt(c.getColumnIndexOrThrow("notnull")))}
+                assertTrue(found)
+            }
+            val t=room.memoryDao().transcript(7)!!
+            assertEquals("下周三评审接口。",t.text);assertNull(t.segmentsJson)
+            assertEquals(7L,room.memoryDao().searchSubstring("评审",0,Long.MAX_VALUE,"all").single().chunkId)
+            assertEquals("s6",room.memoryDao().session("s6")!!.id)
+        } finally {room.close();context.deleteDatabase(name)}
+    }
+    /** v4.2: schema 7 (createSql from 7.json) -> 8 keeps rows and timestamps, adds nullable recording_sessions.speakerNamesJson and capture_marks. */
+    @Test fun v7ToV8AddsNullableSpeakerNamesAndKeepsData()=runBlocking {
+        val schema=listOf("schemas","app/schemas").map { File(it,"com.example.shuolesa.data.db.AppDatabase/7.json") }.first { it.exists() }
+        val database=JSONObject(schema.readText()).getJSONObject("database")
+        val name="v7-${UUID.randomUUID()}";val path=context.getDatabasePath(name);path.parentFile!!.mkdirs()
+        SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->
+            val entities=database.getJSONArray("entities")
+            for(i in 0 until entities.length()) { val entity=entities.getJSONObject(i);val table=entity.getString("tableName")
+                db.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}",table))
+                entity.optJSONArray("indices")?.let { idx -> for(j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}",table)) }
+            }
+            val setup=database.getJSONArray("setupQueries");for(i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO audio_records (id,sessionId,chunkIndex,filePath,durationMs,fileSizeBytes,createdAt,status,retryCount,recordingMode) VALUES (8,'s7',0,'/x.wav',1000,10,1791936000000,'UPLOADED',0,'meeting')")
+            db.execSQL("INSERT INTO recording_sessions VALUES ('s7','meeting',1791936000000,NULL,1000,'会议录音','CLOSED','READY',0,NULL,NULL)")
+            db.execSQL("INSERT INTO transcripts (rowid,text,provenance,createdAt,segmentsJson) VALUES (8,'下周三评审接口。','ASR',1791936000000,'[{\"text\":\"下周三评审接口。\",\"start\":0}]')")
+            db.execSQL("INSERT INTO transcripts_fts(transcripts_fts) VALUES('rebuild')")
+            db.version=7
+        }
+        val room=open(name)
+        try {
+            room.openHelper.writableDatabase.query("PRAGMA table_info(recording_sessions)").use { c ->
+                var found=false;while(c.moveToNext()) if(c.getString(c.getColumnIndexOrThrow("name"))=="speakerNamesJson") {found=true;assertEquals(0,c.getInt(c.getColumnIndexOrThrow("notnull")))}
+                assertTrue(found)
+            }
+            assertNull(room.memoryDao().session("s7")!!.speakerNamesJson)
+            assertNotNull(room.memoryDao().transcript(8)!!.segmentsJson)
+            // v4.2: capture marks table added by the same migration
+            room.memoryDao().insertMark(com.example.shuolesa.data.db.CaptureMarkEntity(sessionId="s7",offsetMs=52_000,createdAt=1))
+            room.memoryDao().insertMark(com.example.shuolesa.data.db.CaptureMarkEntity(sessionId="s7",offsetMs=6_000,createdAt=2))
+            assertEquals(listOf(6_000L,52_000L),room.memoryDao().marksForSession("s7"))
+            room.memoryDao().setSpeakerNames("s7","{\"1\":\"张三\"}")
+            assertEquals("{\"1\":\"张三\"}",room.memoryDao().session("s7")!!.speakerNamesJson)
+        } finally {room.close();context.deleteDatabase(name)}
     }
     @Test fun unknownV5SchemaFailsWithoutDestroyingOriginal() {
         val(name,audio)=fixture(5,broken=true);val db=open(name)

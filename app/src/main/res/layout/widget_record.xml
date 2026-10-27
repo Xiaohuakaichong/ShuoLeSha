@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v5.0 录音条 (4x1): idle = one big orb to start; recording = red orb to stop + timer + pause + mark. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="10dp">
+
+    <FrameLayout
+        android:id="@+id/rec_orb"
+        android:layout_width="52dp"
+        android:layout_height="52dp">
+        <ImageView
+            android:id="@+id/rec_orb_bg"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:src="@drawable/widget_orb" />
+        <ImageView
+            android:id="@+id/rec_orb_icon"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/tile_record_label"
+            android:src="@drawable/ic_w_mic_on_orb" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/rec_texts"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+        <TextView
+            android:id="@+id/rec_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="开始录音"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/rec_sub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="点一下，随身记录"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+        <Chronometer
+            android:id="@+id/rec_timer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/rec_pause"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/widget_circle_raised"
+        android:contentDescription="暂停录音"
+        android:src="@drawable/ic_w_pause"
+        android:visibility="gone" />
+    <ImageButton
+        android:id="@+id/rec_mark"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/widget_circle_raised"
+        android:contentDescription="标记刚才这句"
+        android:src="@drawable/ic_w_flag"
+        android:visibility="gone" />
+</LinearLayout>

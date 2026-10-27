@@ -7,24 +7,31 @@ import java.io.File
 import java.time.LocalDate
 import java.util.Locale
 
-/** PCM samples, not callback count or wall time, determine duration. */
+/**
+ * PCM samples, not callback count or wall time, determine duration.
+ * v4.1-a: [onPcmFrame] is only called by the PcmPipeline consumer coroutine, never by the
+ * AudioRecord read loop, so sealing (AAC finish, rename, Room) and checkpoints can take seconds
+ * without dropping microphone samples. [closeChunk] is called after the consumer has drained.
+ */
 class ChunkManager(private val context: Context,private val repository: MemoryRepository,
     val sessionId: String,private val mode: String,private val bitrate: Int=24,private val format: String="wav") {
     private var wav: WavWriter?=null
     private var aac: AacWriter?=null
     private var file: File?=null
     private var recordId=0L
-    private var samples=0L
-    private var completedSamples=0L
-    private var index=0
+    @Volatile private var samples=0L
+    @Volatile private var completedSamples=0L
+    @Volatile private var index=0
     private var day=LocalDate.now()
     private var checkpointAt=0L
+    private var nextMidnight=Long.MAX_VALUE
     val durationMs get()=(completedSamples+samples)*1000/AudioRecorder.SAMPLE_RATE
     val savedChunks get()=index
 
     private suspend fun open() {
         val now=System.currentTimeMillis()
         day=LocalDate.now()
+        nextMidnight=day.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
         val dir=File(context.filesDir,"recordings").apply { check(mkdirs() || isDirectory) }
         val compressed=mode=="lifelog" || format=="aac_64k"
         val ext=if(compressed) "aac" else "wav"
@@ -37,7 +44,7 @@ class ChunkManager(private val context: Context,private val repository: MemoryRe
         else wav=WavWriter(target)
     }
     suspend fun onPcmFrame(pcm: ShortArray,count: Int) {
-        if(file!=null && day!=LocalDate.now()) closeChunk()
+        if(file!=null && System.currentTimeMillis()>=nextMidnight && day!=LocalDate.now()) closeChunk()
         var offset=0
         while(offset<count) {
             if(file==null) open()

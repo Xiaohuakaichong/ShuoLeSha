@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 MAX_AUDIO = 16 * 1024 * 1024
 MAX_JSON = 24 * 1024 * 1024
 MAX_RESPONSE = 4 * 1024 * 1024
+VERSION = "4.1.1"
 
 
 @dataclass(frozen=True)
@@ -170,8 +171,16 @@ async def upstream(client: httpx.AsyncClient, settings: Settings, token: str, pa
         raise HTTPException(502, "Upstream is unavailable") from None
     if not 200 <= response.status_code < 300:
         status = response.status_code
+        retry_after = response.headers.get("retry-after")
         await response.aclose()
-        raise HTTPException(status if 400 <= status <= 599 else 502, "Upstream request rejected")
+        if status in {401, 403}:
+            # The gateway's own 401 means "wrong gateway token". An upstream credential rejection is
+            # reported as 502 + X-Upstream-Status so the client can tell "upstream key invalid" apart.
+            raise HTTPException(502, "Upstream credential rejected", headers={"X-Upstream-Status": str(status)})
+        headers = {"X-Upstream-Status": str(status)}
+        if retry_after and status in {429, 503}:
+            headers["Retry-After"] = retry_after[:32]
+        raise HTTPException(status if 400 <= status <= 599 else 502, "Upstream request rejected", headers=headers)
     return response
 
 
@@ -226,7 +235,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.client = client
             yield
 
-    app = FastAPI(title="说了啥私有网关", version="4.0", lifespan=lifespan)
+    app = FastAPI(title="说了啥私有网关", version=VERSION, lifespan=lifespan)
 
     @app.middleware("http")
     async def size_guard(request: Request, call_next):
@@ -247,7 +256,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/")
     @app.get("/health")
     async def health():
-        return {"service": "ShuoLeSha", "status": "ok", "version": "4.0"}
+        return {"service": "ShuoLeSha", "status": "ok", "version": VERSION}
 
     @app.post("/v1/audio/asr/sse")
     async def asr_sse(request: Request, authorization: str | None = Header(None)):

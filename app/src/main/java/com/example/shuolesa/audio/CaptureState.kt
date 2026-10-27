@@ -9,6 +9,8 @@ data class CaptureState(
     val savedChunks: Int = 0,
     val level: Float = 0f,
     val error: String? = null,
+    /** v4.2: marks of this recording so far, as offsets from its start (录音页「标记刚才这句」). */
+    val marks: List<Long> = emptyList(),
 ) {
     val active: Boolean get() = phase in listOf(CapturePhase.STARTING,CapturePhase.RECORDING,CapturePhase.PAUSED,CapturePhase.STOPPING)
     val modeLabel: String get() = if(mode=="meeting") "会议" else "随身"

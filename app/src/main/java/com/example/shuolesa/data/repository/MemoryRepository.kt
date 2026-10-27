@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.example.shuolesa.data.db.*
 import com.example.shuolesa.data.model.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.shareIn
 import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
@@ -20,10 +24,10 @@ data class MemorySnapshot(
     val jobs: List<ProcessingJobEntity> = emptyList(),
 )
 
-class MemoryRepository(val database: AppDatabase, private val context: Context) {
+class MemoryRepository(val database: AppDatabase, private val context: Context, scope: CoroutineScope? = null) {
     val dao = database.memoryDao()
     val audio = database.audioRecordDao()
-    val snapshots = combine(
+    private val liveSnapshots = combine(
         combine(dao.observeSessions(), audio.observeChunkMetadata(), dao.observeTranscriptMeta(), dao.observeTopics()) { a,b,c,d ->
             MemorySnapshot(sessions=a,chunks=b,transcripts=c,topics=d)
         },
@@ -31,6 +35,14 @@ class MemoryRepository(val database: AppDatabase, private val context: Context) 
             MemorySnapshot(notes=a,tasks=b,digests=c,jobs=d)
         },
     ) { a,b -> a.copy(notes=b.notes,tasks=b.tasks,digests=b.digests,jobs=b.jobs) }
+    /**
+     * v4.1.1: one shared upstream for every screen. Each ViewModel's stateIn used to start its own copy of the
+     * eight Room queries, so one table change re-ran them once per open screen. Without a scope (tests) the
+     * flow stays cold.
+     */
+    val snapshots: Flow<MemorySnapshot> = scope?.let {
+        liveSnapshots.shareIn(it, SharingStarted.WhileSubscribed(stopTimeoutMillis=5_000, replayExpirationMillis=0), replay=1)
+    } ?: liveSnapshots
 
     suspend fun createSession(session: RecordingSessionEntity) = dao.insertSession(session)
     suspend fun registerChunk(chunk: AudioRecordEntity): Long = audio.insert(chunk)
@@ -68,9 +80,22 @@ class MemoryRepository(val database: AppDatabase, private val context: Context) 
         if(regenerate) dao.resetJob(key)
         dao.updateProcessing(sessionId,"DERIVING")
     }
-    suspend fun saveTranscript(chunk: AudioRecordEntity, text: String) = database.withTransaction {
-        if(dao.session(chunk.sessionId)==null || audio.getById(chunk.id)==null) return@withTransaction
-        if (dao.insertTranscript(TranscriptEntity(chunk.id,text,"ASR",System.currentTimeMillis())) != -1L) {
+    /** [segmentsJson] (v4.2): sentence times / speakers in the AsrSegments.toJson format, or null. */
+    suspend fun saveTranscript(chunk: AudioRecordEntity, text: String, segmentsJson: String? = null) = database.withTransaction {
+        insertTranscript(chunk, text, segmentsJson)
+    }
+
+    /**
+     * v4.2: transcripts of several 片段 from one diarized pass over a meeting, saved together so the meeting never
+     * shows a mix of speaker numbering. chunkId -> (原话, segmentsJson). An existing transcript is never replaced.
+     */
+    suspend fun saveTranscripts(results: Map<Long, Pair<String, String?>>) = database.withTransaction {
+        results.forEach { (id, result) -> audio.getById(id)?.let { insertTranscript(it, result.first, result.second) } }
+    }
+
+    private suspend fun insertTranscript(chunk: AudioRecordEntity, text: String, segmentsJson: String?) {
+        if(dao.session(chunk.sessionId)==null || audio.getById(chunk.id)==null) return
+        if (dao.insertTranscript(TranscriptEntity(chunk.id,text,"ASR",System.currentTimeMillis(),segmentsJson)) != -1L) {
             dao.incrementRevision(chunk.sessionId)
         }
         audio.updateStatus(chunk.id, "UPLOADED", System.currentTimeMillis())
@@ -119,6 +144,12 @@ class MemoryRepository(val database: AppDatabase, private val context: Context) 
     }
 
     suspend fun retry() { dao.retryJobs(); audio.recoverUploads() }
+    /** v4.1 单条重试. */
+    suspend fun retrySession(sessionId: String) { dao.retryJobsForSession(sessionId); audio.recoverUploads() }
+    /** v4.1 数据页：本机原音占用（片段文件 + 导入原件，按实际文件大小）。 */
+    fun audioUsageBytes(snapshot: MemorySnapshot): Long =
+        (snapshot.chunks.map { it.filePath } + snapshot.sessions.mapNotNull { it.sourcePath }).distinct()
+            .sumOf { path -> java.io.File(path).takeIf { it.isFile }?.length() ?: 0L }
 
     suspend fun cleanAudio(sessionId: String) {
         val session=dao.session(sessionId) ?: return
@@ -132,7 +163,7 @@ class MemoryRepository(val database: AppDatabase, private val context: Context) 
         cleanAudio(sessionId)
         database.withTransaction {
             dao.detachConfirmedTasks(sessionId); dao.deleteCandidates(sessionId)
-            dao.deleteJobs(sessionId); dao.deleteTopics(sessionId); dao.deleteNote(sessionId)
+            dao.deleteJobs(sessionId); dao.deleteTopics(sessionId); dao.deleteNote(sessionId); dao.deleteMarks(sessionId)
             dao.deleteTranscripts(sessionId); audio.deleteSessionChunks(sessionId); dao.deleteSession(sessionId)
         }
     }

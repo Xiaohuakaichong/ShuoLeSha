@@ -17,7 +17,7 @@ class PermissionHelper(private val context: Context) {
     companion object {
         val REQUIRED_PERMISSIONS = buildList {
             add(Manifest.permission.RECORD_AUDIO)
-            add(Manifest.permission.READ_PHONE_STATE)
+            // v4.1-a: READ_PHONE_STATE removed; calls are detected via AudioManager mode.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
             }

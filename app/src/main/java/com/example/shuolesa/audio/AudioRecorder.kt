@@ -9,16 +9,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
 import java.io.IOException
 
-/** One owner consumes PCM. stop() unblocks the native read; release follows join(). */
+/**
+ * One owner consumes PCM. stop() unblocks the native read; release follows join().
+ * v4.1-a: >= 2 s native buffer and READ_BLOCKING. The frame callback must stay cheap
+ * (hand the frame to [PcmPipeline]); encoding and DB work happen on the consumer side.
+ */
 class AudioRecorder {
     companion object {
         const val SAMPLE_RATE = 16000
         const val FRAME_SIZE = 960
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+        /** 2 s of 16-bit mono PCM, in bytes. */
+        const val MIN_BUFFER_BYTES = SAMPLE_RATE * 2 * 2
     }
     private var record: AudioRecord? = null
     @Volatile private var stopping = false
@@ -29,7 +34,7 @@ class AudioRecorder {
         val size = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
         if (size <= 0) return false
         record = AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_CONFIG,
-            AUDIO_FORMAT, maxOf(size, FRAME_SIZE * 8))
+            AUDIO_FORMAT, maxOf(size, MIN_BUFFER_BYTES))
         return record?.state == AudioRecord.STATE_INITIALIZED
     }
     @Synchronized private fun startNative(): Boolean {
@@ -45,10 +50,9 @@ class AudioRecorder {
         val pcm = ShortArray(FRAME_SIZE)
         try {
             while (currentCoroutineContext().isActive && !stopping) {
-                val count = native.read(pcm, 0, pcm.size, AudioRecord.READ_NON_BLOCKING)
+                val count = native.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
                 if (count > 0) onFrame(pcm, count)
                 else if (!stopping && count < 0) throw IOException("麦克风采集中断 ($count)")
-                else if(count==0) delay(10)
             }
         } finally { stop() }
     }

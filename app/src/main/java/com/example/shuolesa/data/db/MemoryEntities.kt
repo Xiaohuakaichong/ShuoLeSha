@@ -20,6 +20,8 @@ data class RecordingSessionEntity(
     val sourceRevision: Int = 0,
     val sourcePath: String? = null,
     val error: String? = null,
+    /** v4.2 (schema 8): `{"<speaker key>":"名字"}`, see ui/logic/SpeakerNames. Stays on the device. */
+    val speakerNamesJson: String? = null,
 )
 
 @Entity(tableName = "transcripts")
@@ -28,6 +30,8 @@ data class TranscriptEntity(
     val text: String,
     val provenance: String,
     val createdAt: Long,
+    /** v4.1-a (schema 7): reserved for per-sentence timestamps; always null in v4.1-a. */
+    val segmentsJson: String? = null,
 )
 
 @Fts4(contentEntity = TranscriptEntity::class, tokenizer = FtsOptions.TOKENIZER_UNICODE61)
@@ -81,6 +85,18 @@ data class TaskEntity(
     val sourceDeleted: Boolean = false,
 )
 
+/**
+ * v4.2 (schema 8): a moment the user marked while recording (录音页「标记刚才这句」). [offsetMs] counts from the start
+ * of the recording; the detail page maps it to a 片段 by the sealed 片段 durations.
+ */
+@Entity(tableName = "capture_marks", indices = [Index("sessionId")])
+data class CaptureMarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sessionId: String,
+    val offsetMs: Long,
+    val createdAt: Long,
+)
+
 @Entity(tableName = "processing_jobs", indices = [Index("state")])
 data class ProcessingJobEntity(
     @PrimaryKey val id: String,
@@ -104,3 +120,6 @@ data class TranscriptSource(
 )
 
 data class TranscriptMeta(val chunkId: Long, val provenance: String, val createdAt: Long, val textLength: Int)
+
+/** v4.1.1: per-chunk timestamp slot without loading the transcript text. */
+data class TranscriptSegments(val chunkId: Long, val segmentsJson: String?)

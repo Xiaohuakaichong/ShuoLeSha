@@ -64,6 +64,17 @@ class OpusPlayer(private val context: Context) {
     private var sourceFile:File?=null
     private var durationMs = 0L
 
+    /** v4.2: playback speed for WAV/AAC (MediaPlayer). Legacy Opus files always play at 1×. */
+    @Volatile private var speed = 1f
+    fun setSpeed(value: Float) {
+        speed = value.coerceIn(0.5f, 3f)
+        if (isWavFormat && isPlaying && !isPaused) applySpeed()
+    }
+    /** Only while playing: setting PlaybackParams on a paused MediaPlayer would start it. */
+    private fun applySpeed() {
+        runCatching { mediaPlayer?.let { it.playbackParams = it.playbackParams.setSpeed(speed) } }
+    }
+
     var onProgressUpdate: ((Long) -> Unit)? = null
     var onCompletion: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
@@ -156,6 +167,7 @@ class OpusPlayer(private val context: Context) {
                     isPaused = false
                     try {
                         mp.start()
+                        if (speed != 1f) applySpeed()
                         mainHandler.post(progressRunnable)
                     } catch (_: Exception) {}
                 }
@@ -165,6 +177,7 @@ class OpusPlayer(private val context: Context) {
             isPaused = false
             try {
                 mp.start()
+                if (speed != 1f) applySpeed()
                 mainHandler.post(progressRunnable)
             } catch (e: Exception) {
                 Log.e(TAG, "MediaPlayer start failed", e)

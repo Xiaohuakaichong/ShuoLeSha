@@ -1,7 +1,16 @@
 <resources>
     <string name="app_name">说了啥</string>
     <string name="accessibility_service_description">说了啥需要无障碍服务权限来拦截音量键组合，实现息屏盲操录音功能。</string>
-    <string name="shortcut_record_short">开始录音</string>
-    <string name="shortcut_record_long">快捷开始录音</string>
     <string name="tile_record_label">快捷录音</string>
+    <string name="shortcut_today_short">今天</string>
+    <string name="shortcut_today_long">打开今天的记录</string>
+    <!-- v5.0 widgets -->
+    <string name="widget_record_label">录音条</string>
+    <string name="widget_record_desc">一键开始、暂停、标记和停止录音</string>
+    <string name="widget_quick_label">快捷入口</string>
+    <string name="widget_quick_desc">随身录音、会议录音、搜索、待办</string>
+    <string name="widget_todo_label">待办清单</string>
+    <string name="widget_todo_desc">点一下就能勾掉待办</string>
+    <string name="widget_today_label">今日回顾</string>
+    <string name="widget_today_desc">今天说了多少、最近一条记忆</string>
 </resources>

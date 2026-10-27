@@ -28,6 +28,10 @@ object AudioDecoder {
             var inputEnded=false; var outputEnded=false
             var stalledAt=System.nanoTime()
             var accumulator=0L
+            // v4.1.1: box filter. Plain decimation (keep every Nth sample) folded 8-24 kHz content of 44.1/48 kHz
+            // imports back into the speech band; averaging the input frames behind each output sample damps it.
+            // At 16 kHz input (the app's own recordings) each box holds one frame, so output is unchanged.
+            var boxSum=0L; var boxCount=0
             val pcm=ShortArray(4096); var count=0
             val info=MediaCodec.BufferInfo()
             while(!outputEnded) {
@@ -61,10 +65,14 @@ object AudioDecoder {
                     while(buffer.remaining()>=channels*bytes) {
                         var sum=0L
                         repeat(channels) { sum+=if(bytes==4) (buffer.float.coerceIn(-1f,1f)*32767).toLong() else buffer.short.toLong() }
+                        boxSum+=sum/channels; boxCount++
                         accumulator+=16000
-                        while(accumulator>=rate) {
-                            pcm[count++]=(sum/channels).toShort(); accumulator-=rate
-                            if(count==pcm.size) { onPcm(pcm,count); count=0 }
+                        if(accumulator>=rate) {
+                            val sample=(boxSum/boxCount).toShort(); boxSum=0; boxCount=0
+                            while(accumulator>=rate) {
+                                pcm[count++]=sample; accumulator-=rate
+                                if(count==pcm.size) { onPcm(pcm,count); count=0 }
+                            }
                         }
                     }
                     outputEnded=info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0

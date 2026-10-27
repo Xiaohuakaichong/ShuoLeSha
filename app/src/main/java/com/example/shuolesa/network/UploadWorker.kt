@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.shuolesa.AppContainer
+import kotlinx.coroutines.CancellationException
 
 /** Every persisted job has its own KEEP work identity. Immediate and durable runners share claims. */
 class UploadWorker(context: Context,parameters: WorkerParameters): CoroutineWorker(context,parameters) {
@@ -12,16 +13,32 @@ class UploadWorker(context: Context,parameters: WorkerParameters): CoroutineWork
         app.awaitReady()
         val id=inputData.getString("job_id")
         if(id==null) { app.processing.requestProcessing();return Result.success() }
-        app.repository.dao.wakeNetworkJob(id)
-        val ok=app.processing.runOne(id)
-        val state=app.repository.dao.job(id)?.state
-        return when {
-            state==null || state=="COMPLETE" -> Result.success()
-            state in listOf("WAITING_CONFIG","WAITING_NETWORK") -> if(state=="WAITING_NETWORK") Result.retry() else Result.success()
-            state=="WAITING_DEPENDENCY" -> Result.success()
-            (app.repository.dao.job(id)?.attempts ?: 0) >=5 -> Result.failure()
-            !ok -> Result.retry()
-            else -> Result.success()
+        // v4.1.1: a retry keeps this unique work enqueued; any other end lets the coordinator enqueue it again.
+        var retry=false
+        try {
+            app.repository.dao.wakeNetworkJob(id)
+            val ok=app.processing.runOne(id)
+            val job=app.repository.dao.job(id)
+            val state=job?.state
+            return when {
+                state==null || state=="COMPLETE" -> Result.success()
+                // v4.1-a: 429/5xx are re-scheduled by ProcessingCoordinator with Retry-After ("memory-retry:<id>").
+                state=="WAITING_NETWORK" && ProcessingReason.code(job?.error)==ProcessingReason.RATE_LIMITED -> Result.success()
+                state=="WAITING_NETWORK" -> { retry=true;Result.retry() }
+                // WAITING_CONFIG is woken on save / foreground / network change (rate limited), not by backoff.
+                state=="WAITING_CONFIG" -> Result.success()
+                state=="WAITING_DEPENDENCY" -> Result.success()
+                // Left PENDING because outbound consent is missing or a Retry-After window is still open.
+                state=="PENDING" && ok -> Result.success()
+                (job?.attempts ?: 0)>=5 -> Result.failure()
+                !ok -> { retry=true;Result.retry() }
+                else -> Result.success()
+            }
+        } catch(e: CancellationException) {
+            retry=true // stopped by the system; WorkManager reschedules the same work
+            throw e
+        } finally {
+            if(!retry) app.processing.onDurableWorkFinished(id)
         }
     }
     companion object {

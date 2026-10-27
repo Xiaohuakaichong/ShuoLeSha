@@ -7,10 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -19,7 +17,7 @@
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -39,6 +37,19 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- v4.1-a.3: the only entry allowed to auto-start recording. Not exported; reached by explicit
+             in-app intents from the tile, the volume-key trigger and the capture service. No UI. -->
+        <activity
+            android:name=".service.ShortcutTrampolineActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- v4.1 ⑦: "以后不提示" action on the blind-trigger fallback notification. Not exported. -->
+        <receiver android:name=".service.BlindHintReceiver" android:exported="false" />
 
         <!-- Quick Settings Tile for fast record toggle -->
         <service
@@ -70,6 +81,25 @@
             android:name=".service.AudioCaptureService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- v5.0 home screen widgets: 录音条 · 快捷入口 · 待办清单 · 今日回顾 -->
+        <receiver android:name=".widget.RecordWidgetProvider" android:exported="true" android:label="@string/widget_record_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_record_info" />
+        </receiver>
+        <receiver android:name=".widget.QuickWidgetProvider" android:exported="true" android:label="@string/widget_quick_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_info" />
+        </receiver>
+        <receiver android:name=".widget.TodoWidgetProvider" android:exported="true" android:label="@string/widget_todo_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_todo_info" />
+        </receiver>
+        <receiver android:name=".widget.TodayWidgetProvider" android:exported="true" android:label="@string/widget_today_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_info" />
+        </receiver>
+        <service android:name=".widget.TodoWidgetService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
 
         <!-- FileProvider for exporting logs and audio files -->
         <provider

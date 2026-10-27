@@ -25,7 +25,7 @@ class UiInteractionTest {
     @Test fun topicCardOpensAndShowsCandidateCount() {
         var opened=false
         compose.setContent {ShuoLeSaTheme {MemoryCardView(MemoryCard("t","s","t","周五交付","先完成原型再确认交期",1,"lifelog",60000,"READY",2,false)) {opened=true}}}
-        compose.onNodeWithText("2 项候选待办").assertIsDisplayed()
+        compose.onNodeWithText("2 项待确认").assertIsDisplayed()
         compose.onNodeWithText("周五交付").performClick()
         compose.runOnIdle {assertTrue(opened)}
     }

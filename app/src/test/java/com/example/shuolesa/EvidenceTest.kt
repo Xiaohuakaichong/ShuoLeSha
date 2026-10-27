@@ -9,9 +9,17 @@ import org.junit.Test
 import com.example.shuolesa.data.prefs.AiSettings
 
 class EvidenceTest {
+    /** v4.1-a: HTTP only for the network_security_config whitelist; LAN IPs must use HTTPS / adb reverse. */
     @Test fun localHttpRequiresAnActualPrivateAddress() {
         fun config(url:String)=AiSettings("custom",url,"","asr","llm","")
-        assertTrue(config("http://192.168.1.8/v1").local)
+        assertTrue(config("http://localhost:8000/v1").local)
+        assertTrue(config("http://127.0.0.1:8000/v1").local)
+        assertTrue(config("http://10.0.2.2:8000/v1").local)
+        assertFalse(config("http://192.168.1.8/v1").local)
+        val lan=assertThrows(IllegalArgumentException::class.java) {config("http://192.168.1.8/v1").validate()}
+        assertTrue(lan.message!!.contains("adb reverse"))
+        assertThrows(IllegalArgumentException::class.java) {config("http://api.example.com/v1").validate()}
+        config("https://192.168.1.8/v1").validate()
         assertFalse(config("http://10.evil.example/v1").local)
         assertFalse(config("http://192.168.evil.example/v1").local)
         assertThrows(IllegalArgumentException::class.java) {config("http://10.evil.example/v1").validate()}

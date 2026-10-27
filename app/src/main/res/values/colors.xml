@@ -1,7 +1,16 @@
 <resources>
-    <color name="primary">#2463EB</color>
-    <color name="background">#F7F8FA</color>
-    <color name="outline">#E5E7EC</color>
-    <color name="text_primary">#17181B</color>
-    <color name="text_secondary">#626670</color>
+    <color name="primary">#0E6B5C</color>
+    <color name="background">#F5F3EE</color>
+    <color name="outline">#E7E4DB</color>
+    <color name="text_primary">#1B1C19</color>
+    <color name="text_secondary">#68685F</color>
+    <!-- v5.0 widgets -->
+    <color name="widget_bg">#FFFFFF</color>
+    <color name="widget_bg_raised">#F1EFE9</color>
+    <color name="widget_accent_bg">#D3EEE4</color>
+    <color name="widget_accent_text">#00382E</color>
+    <color name="widget_record">#E5484D</color>
+    <color name="widget_on_record">#FFFFFF</color>
+    <color name="widget_orb">#0E6B5C</color>
+    <color name="widget_on_orb">#FFFFFF</color>
 </resources>

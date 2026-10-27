@@ -21,7 +21,10 @@ data class RecallFilter(val start: Long=0,val end: Long=Long.MAX_VALUE,val mode:
 class AskMemory(private val app: AppContainer) {
     suspend operator fun invoke(question: String,filter: RecallFilter,sessionId: String?=null): RecallAnswer {
         val config=app.preferences.aiSettings()
-        require(config.apiKey.isNotBlank() || config.local) { "请先配置转写与整理服务" }
+        // v4.3: 提问 only uses the 整理 service.
+        require(config.forLlm().let { it.apiKey.isNotBlank() || it.local }) { "请先配置转写与整理服务" }
+        // v4.1-a.1: shared gate (also enforced inside AiClient.send)
+        com.example.shuolesa.network.OutboundGate.require(app.preferences.isOutboundConsented())
         val terms=app.ai.queryTerms(config,question)
         val candidates=if(sessionId!=null) app.repository.dao.sourcesForSession(sessionId) else
             terms.flatMap { app.repository.search(it,filter.start,filter.end,filter.mode) }.distinctBy { it.chunkId }
@@ -74,7 +77,7 @@ class GenerateDigest(private val app: AppContainer) {
     suspend operator fun invoke(date: LocalDate): String {
         val zone=ZoneId.systemDefault()
         val sources=app.repository.daySources(date,zone)
-        require(sources.isNotEmpty()) { "这一天还没有已转写的原稿" }
+        require(sources.isNotEmpty()) { "这一天还没有已转写的原话" }
         val fingerprint=stableId(*sources.map { "${it.chunkId}:${stableId(it.text)}" }.toTypedArray())
         val key="digest:$date:$fingerprint"
         val input=JSONObject().put("date",date.toString()).put("zone",zone.id)

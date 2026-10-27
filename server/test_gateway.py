@@ -67,6 +67,31 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post("/v1/chat/completions", json={"model": "x", "messages": []})
         self.assertEqual(401, response.status_code)
 
+    async def test_upstream_credential_rejection_maps_to_502(self):
+        for status in (401, 403):
+            stream = Stream([b"credential-private-error"])
+            await self.setup_gateway(lambda r, s=status, st=stream: httpx.Response(s, stream=st))
+            response = await self.client.post("/v1/chat/completions", json={"model": "x", "messages": []})
+            self.assertEqual(502, response.status_code)
+            self.assertEqual(str(status), response.headers.get("x-upstream-status"))
+            self.assertNotIn("private", response.text)
+            self.assertTrue(stream.closed)
+
+    async def test_gateway_own_401_has_no_upstream_header(self):
+        await self.setup_gateway(lambda r: self.fail("should not reach upstream"),
+                                 main.Settings(upstream_key="u", gateway_token="gw"))
+        response = await self.client.post("/v1/chat/completions", json={"model": "x", "messages": []},
+                                          headers={"Authorization": "Bearer wrong"})
+        self.assertEqual(401, response.status_code)
+        self.assertIsNone(response.headers.get("x-upstream-status"))
+
+    async def test_rate_limit_forwards_retry_after(self):
+        await self.setup_gateway(lambda r: httpx.Response(429, headers={"Retry-After": "7"}))
+        response = await self.client.post("/v1/chat/completions", json={"model": "x", "messages": []})
+        self.assertEqual(429, response.status_code)
+        self.assertEqual("7", response.headers.get("retry-after"))
+        self.assertEqual("429", response.headers.get("x-upstream-status"))
+
     async def test_rejected_upstream_status_is_preserved_without_body(self):
         stream = Stream([b"credential-private-error"])
         await self.setup_gateway(lambda r: httpx.Response(429, stream=stream))

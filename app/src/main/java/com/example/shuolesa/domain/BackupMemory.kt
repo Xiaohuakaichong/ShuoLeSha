@@ -34,7 +34,7 @@ class BackupMemory(private val app:AppContainer) {
             ZipOutputStream(output.buffered()).use { zip ->
                 fun entry(name:String,file:File) { zip.putNextEntry(ZipEntry(name));file.inputStream().use { it.copyTo(zip) };zip.closeEntry() }
                 folder.listFiles().orEmpty().forEach { entry("database/${it.name}",it) }
-                val manifest=JSONObject().put("version",4).put("schema",6).put("created_at",System.currentTimeMillis())
+                val manifest=JSONObject().put("version",4).put("schema",com.example.shuolesa.data.db.DB_SCHEMA_VERSION).put("created_at",System.currentTimeMillis())
                     .put("original_files_root",root.path).put("restoration","Restore database with WAL together; remap original_files_root to the destination app files directory.")
                 zip.putNextEntry(ZipEntry("manifest.json"));zip.write(manifest.toString(2).toByteArray());zip.closeEntry()
                 paths.forEach { path -> val file=File(path).canonicalFile

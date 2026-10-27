@@ -1,18 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- v4.1: launcher shortcut opens screen ④ 今日 on the exported MainActivity. Navigation only:
+         it never records (MainActivity ignores extras without the in-process token; see a.3). -->
     <shortcut
-        android:shortcutId="quick_record"
+        android:shortcutId="today"
         android:enabled="true"
-        android:icon="@drawable/ic_shortcut_record"
-        android:shortcutShortLabel="@string/shortcut_record_short"
-        android:shortcutLongLabel="@string/shortcut_record_long">
+        android:icon="@drawable/ic_shortcut_today"
+        android:shortcutShortLabel="@string/shortcut_today_short"
+        android:shortcutLongLabel="@string/shortcut_today_long">
         <intent
-            android:action="android.intent.action.VIEW"
+            android:action="com.example.shuolesa.action.OPEN_TODAY"
             android:targetPackage="com.example.shuolesa"
-            android:targetClass="com.example.shuolesa.MainActivity">
-            <extra
-                android:name="auto_start_recording"
-                android:value="true" />
-        </intent>
+            android:targetClass="com.example.shuolesa.MainActivity" />
     </shortcut>
 </shortcuts>

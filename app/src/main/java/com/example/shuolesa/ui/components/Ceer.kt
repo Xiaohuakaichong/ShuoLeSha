@@ -7,15 +7,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 
 enum class CeerPose(val label:String) { IDLE("侧耳"),LISTENING("正在听"),THINKING("正在整理"),SPEAKING("正在回听"),PAUSED("已暂停"),SLEEP("暂无记忆"),SUCCESS("已保存"),ERROR("需要处理") }
-@Composable fun Ceer(pose:CeerPose,modifier:Modifier=Modifier) {
-    val body=MaterialTheme.colorScheme.onSurface
-    val eye=MaterialTheme.colorScheme.surface
+/** v5.0: the mascot takes the brand colour (jade body, light eyes); callers on a coloured disc pass their own [body] / [eye]. */
+@Composable fun Ceer(pose:CeerPose,modifier:Modifier=Modifier,body:Color=MaterialTheme.colorScheme.primary,eye:Color=MaterialTheme.colorScheme.onPrimary) {
     val active=pose in listOf(CeerPose.LISTENING,CeerPose.THINKING,CeerPose.SPEAKING)
     val wave=if(active) {
         val motion=rememberInfiniteTransition(label="ceer")

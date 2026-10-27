@@ -193,12 +193,24 @@ class BlindTriggerService : AccessibilityService() {
 
     private fun onStartTriggered(mode: String) {
         scope.launch {
-            Log.d(TAG, "Trigger: START recording in mode: $mode")
-            val intent = Intent(this@BlindTriggerService, AudioCaptureService::class.java).apply {
-                action = AudioCaptureService.ACTION_START
-                putExtra(AudioCaptureService.EXTRA_RECORDING_MODE, mode)
+            // v4.1-a.3: consented -> start the service directly (in-app explicit intent, works on the lock screen
+            // without an activity). Not consented -> non-exported trampoline (consent page). No exported extras.
+            if (prefs?.privacyConsented?.first() == true) {
+                Log.d(TAG, "Trigger: START recording in mode: $mode")
+                try {
+                    startForegroundService(Intent(this@BlindTriggerService, AudioCaptureService::class.java).apply {
+                        action = AudioCaptureService.ACTION_START
+                        putExtra(AudioCaptureService.EXTRA_RECORDING_MODE, mode)
+                    })
+                } catch (e: Exception) {
+                    // v4.1 ⑦: system blocked the background start (e.g. ForegroundServiceStartNotAllowedException)
+                    Log.w(TAG, "Background start blocked: ${e.javaClass.simpleName}")
+                    EventNotifications.blindTriggerFailed(this@BlindTriggerService)
+                }
+            } else {
+                Log.d(TAG, "Trigger: consent missing, opening trampoline")
+                startActivity(ShortcutTrampolineActivity.intent(this@BlindTriggerService, mode))
             }
-            startForegroundService(intent)
         }
     }
 

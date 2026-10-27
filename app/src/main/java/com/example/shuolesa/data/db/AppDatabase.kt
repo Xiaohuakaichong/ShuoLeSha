@@ -14,10 +14,13 @@ import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 
+/** Must equal @Database(version) below; QueueReuseTest.schemaConstantMatchesRoomVersion checks it. */
+const val DB_SCHEMA_VERSION = 8
+
 @Database(entities = [AudioRecordEntity::class, RecordingSessionEntity::class,
     TranscriptEntity::class, TranscriptFtsEntity::class, MemoryTopicEntity::class,
     DerivedNoteEntity::class, DailyDigestEntity::class, TaskEntity::class,
-    ProcessingJobEntity::class], version = 6, exportSchema = true)
+    ProcessingJobEntity::class, CaptureMarkEntity::class], version = 8, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun audioRecordDao(): AudioRecordDao
     abstract fun memoryDao(): MemoryDao
@@ -61,6 +64,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v4.1-a: nullable per-sentence timestamp slot for a future ASR API. Not populated yet. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transcripts ADD COLUMN segmentsJson TEXT")
+            }
+        }
+        /**
+         * v4.2: user-given speaker names per recording (display labels only, not voiceprints; nullable, no backfill)
+         * and the capture marks table. Both only add; nothing existing is rewritten.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE recording_sessions ADD COLUMN speakerNamesJson TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `capture_marks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` TEXT NOT NULL, `offsetMs` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_capture_marks_sessionId` ON `capture_marks` (`sessionId`)")
+            }
+        }
         private fun createMemoryTables(db: SupportSQLiteDatabase) {
             listOf(
                 """CREATE TABLE IF NOT EXISTS recording_sessions (id TEXT NOT NULL PRIMARY KEY,
@@ -152,17 +172,21 @@ abstract class AppDatabase : RoomDatabase() {
             instance ?: run {
                 backupBeforeUpgrade(context.applicationContext)
                 Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "shuolesa_db")
-                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build().also { instance = it }
             }
         }
 
+        /**
+         * Copies the database before any schema upgrade, into files/backups/pre-v<target>/.
+         * v4.1.1: this used to stop at schema 6, so the 6 -> 7 upgrade ran without a copy.
+         */
         private fun backupBeforeUpgrade(context: Context) {
             val database = context.getDatabasePath("shuolesa_db")
             if (!database.exists()) return
             val version = SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READONLY).use { it.version }
-            if (version >= 6) return
-            val backup = File(context.filesDir, "backups/pre-v6")
+            if (version >= DB_SCHEMA_VERSION) return
+            val backup = File(context.filesDir, "backups/pre-v$DB_SCHEMA_VERSION")
             if (File(backup, "complete").exists()) return
             check(backup.mkdirs() || backup.isDirectory) { "无法创建升级前数据备份，升级已停止" }
             listOf("", "-wal", "-shm").forEach { suffix ->

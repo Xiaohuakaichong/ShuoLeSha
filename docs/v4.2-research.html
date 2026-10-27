@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>说了啥对标与选型</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one reading column (~880px) with wide tables in their own scrollers; the app's own single-blue accent. */
+:root {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --fg: #17212b;
+  --muted: #5a6876;
+  --line: #d9e0e8;
+  --accent: #1f5fbf;
+  --accent-soft: #e7eefa;
+  --ok: #1b7a4b;
+  --ok-soft: #e4f3ea;
+  --warn: #8a5a00;
+  --warn-soft: #fbf1dc;
+  --font-body: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #18202a; --fg: #e3e9ef; --muted: #9aa8b6; --line: #2c3745;
+    --accent: #7fb0ff; --accent-soft: #1d2b40; --ok: #6fd3a0; --ok-soft: #173326; --warn: #f0c46a; --warn-soft: #3a2f17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #18202a; --fg: #e3e9ef; --muted: #9aa8b6; --line: #2c3745;
+  --accent: #7fb0ff; --accent-soft: #1d2b40; --ok: #6fd3a0; --ok-soft: #173326; --warn: #f0c46a; --warn-soft: #3a2f17;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.75;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+header { display: flex; flex-direction: column; gap: 10px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+h1 { font-family: var(--font-display); font-size: clamp(28px, 5vw, 40px); line-height: 1.25; margin: 0; text-wrap: balance; font-weight: 700; }
+h2 { font-family: var(--font-display); font-size: 24px; line-height: 1.35; margin: 0 0 4px; text-wrap: balance; }
+h3 { font-size: 16px; margin: 18px 0 6px; }
+p { margin: 0 0 10px; max-width: 68ch; }
+.lede { font-size: 17px; color: var(--fg); max-width: 64ch; }
+.meta { color: var(--muted); font-size: 13px; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+section { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.verdict { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 12px; }
+.verdict ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
+.verdict li { max-width: 72ch; }
+.pill { display: inline-block; font-size: 12px; line-height: 1.6; padding: 0 8px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.blue { background: var(--accent-soft); color: var(--accent); }
+.scroller { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+thead th { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em; background: var(--surface); white-space: nowrap; }
+.matrix td, .matrix th { text-align: center; white-space: nowrap; }
+.matrix td:first-child, .matrix th:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); }
+.matrix tr.self td { background: var(--accent-soft); }
+.matrix tr.self td:first-child { background: var(--accent-soft); }
+.yes { color: var(--ok); font-weight: 700; }
+.part { color: var(--warn); font-weight: 700; }
+.no { color: var(--muted); }
+.unk { color: var(--muted); opacity: .7; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card h3 { margin: 0; }
+.card p { font-size: 14px; margin: 0; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.flow span.step { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.flow span.arrow { color: var(--muted); }
+code { font-family: var(--font-mono); font-size: .9em; background: var(--accent-soft); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+ul.plain li { max-width: 72ch; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; }
+summary { cursor: pointer; font-weight: 600; }
+ol.sources { margin: 8px 0 0; padding-left: 1.4em; display: grid; gap: 4px; font-size: 13px; }
+ol.sources li { overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<main>
+<header>
+  <div class="eyebrow">说了啥 · 4.2 调研 · 2026 年 10 月 27 日</div>
+  <h1>说了啥对标与选型</h1>
+  <p class="lede">对照 AI 录音硬件的配套 App，找出“说了啥”还缺什么；再按境内、境外两类用户，选出能区分说话人的转写模型和整理模型。</p>
+  <p class="meta">资料来自厂商官网、帮助文档和媒体报道。价格和型号变化快，以官方页面为准；标“估算”“待确认”的数字没有经过实际调用核实。</p>
+</header>
+
+<section>
+  <h2>结论</h2>
+  <div class="verdict">
+    <ol>
+      <li><strong>竞品的基础功能，你基本都有了。</strong>转写、AI 整理、跨录音提问、每日回顾、待办，“说了啥”都已经实现；“每条要点都能逐字核对原话、回听原音”这一点，本次查到的公开资料里没有哪家做到同样严格。</li>
+      <li><strong>最明显的差距是说话人区分。</strong>Plaud、钉钉、飞书录音豆、TicNote、讯飞都能分出谁在说话，Plaud 和 TicNote 还能记住声音、下次自动标名。其次是逐句时间回放、热词、场景模板、录音时打标记、导出。</li>
+      <li><strong>转写模型换成阿里云百炼的 Qwen-Audio-3.1-ASR。</strong>一次调用同时返回文字、说话人编号和逐句时间，北京、新加坡两个地域都有，和整理模型共用一个 Key。现在用的阶跃 StepAudio 2.5 ASR 没有说话人分离。</li>
+      <li><strong>4.2 已经接入。</strong>百炼两个地域的预设、逐句说话人和时间、会议整场统一编号、说话人改名、热词、导出原话都已写好，<span class="pill warn">代码尚未编译</span>，需要在你电脑上跑一次验证脚本。</li>
+      <li><strong>“记住某个人的声音”先不做。</strong>声纹属于生物识别信息，需要单独同意。建议只做“我的声纹”、只存手机里，放到下一步。</li>
+    </ol>
+  </div>
+</section>
+
+<section id="matrix">
+  <h2>竞品对照</h2>
+  <p>只列跟“找回并查证说过的话”有关的能力。团队协作、PPT 生成、第三方集成这类面向企业的功能没有列入。</p>
+  <div class="legend"><span><b class="yes">●</b> 有</span><span><b class="part">◐</b> 部分或有条件</span><span><b class="unk">—</b> 本次查阅的资料没有提到（不代表没有）</span><span><b class="no">✗</b> 没有（只用于“说了啥”自身）</span></div>
+  <div class="scroller">
+    <table class="matrix">
+      <thead><tr><th>产品</th><th>区分说话人</th><th>记住声音</th><th>逐句回听</th><th>场景模板</th><th>搜索 / 问答</th><th>每日回顾</th><th>待办</th><th>录音中标记</th><th>实时转写</th><th>热词 / 术语</th></tr></thead>
+      <tbody>
+        <tr><td>Plaud（NotePin / Note）</td><td class="yes">●</td><td class="yes">●</td><td class="unk">—</td><td class="yes">●</td><td class="yes">●</td><td class="unk">—</td><td class="unk">—</td><td class="yes">●</td><td class="unk">—</td><td class="unk">—</td></tr>
+        <tr><td>钉钉 A1 · AI 听记</td><td class="yes">●</td><td class="unk">—</td><td class="unk">—</td><td class="yes">●</td><td class="yes">●</td><td class="unk">—</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="part">◐</td></tr>
+        <tr><td>飞书 × 安克 AI 录音豆</td><td class="yes">●</td><td class="unk">—</td><td class="part">◐</td><td class="unk">—</td><td class="yes">●</td><td class="unk">—</td><td class="yes">●</td><td class="part">◐</td><td class="yes">●</td><td class="unk">—</td></tr>
+        <tr><td>TicNote · Shadow AI 2.0</td><td class="yes">●</td><td class="yes">●</td><td class="unk">—</td><td class="unk">—</td><td class="yes">●</td><td class="unk">—</td><td class="part">◐</td><td class="part">◐</td><td class="yes">●</td><td class="unk">—</td></tr>
+        <tr><td>讯飞听见</td><td class="yes">●</td><td class="unk">—</td><td class="unk">—</td><td class="part">◐</td><td class="unk">—</td><td class="unk">—</td><td class="yes">●</td><td class="unk">—</td><td class="yes">●</td><td class="unk">—</td></tr>
+        <tr><td>Omi（开源）</td><td class="yes">●</td><td class="yes">●</td><td class="unk">—</td><td class="part">◐</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td></tr>
+        <tr><td>Bee（Amazon）</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td><td class="part">◐</td><td class="yes">●</td><td class="yes">●</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td></tr>
+        <tr><td>Limitless（已停售）</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td><td class="part">◐</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td><td class="unk">—</td></tr>
+        <tr class="self"><td>说了啥 4.1</td><td class="no">✗</td><td class="no">✗</td><td class="part">◐</td><td class="no">✗</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="no">✗</td><td class="part">◐</td><td class="no">✗</td></tr>
+        <tr class="self"><td>说了啥 4.2</td><td class="yes">●</td><td class="no">✗</td><td class="yes">●</td><td class="no">✗</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="no">✗</td><td class="part">◐</td><td class="yes">●</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">“说了啥”的 ◐：4.1 的逐句回听界面已经做好，但没有服务返回逐句时间；“实时”指随身模式每 5 分钟封存一段并转写，不是逐字实时字幕。4.2 的说话人区分、逐句回听、热词目前只在使用阿里云百炼时生效。</p>
+
+  <h3>值得借鉴的做法</h3>
+  <div class="grid2">
+    <div class="card"><h3>Plaud：标一次，以后自动认</h3><p>录 30 秒建立自己的声音档案；别人只要在某次记录里标过名字，打开“同步说话人标签”后，以后的录音会自动标上。自动标签只在转写时生成，旧记录要重新转写。</p></div>
+    <div class="card"><h3>TicNote：声纹列表可管理</h3><p>识别到的发言人自动进入声纹列表，可以查看和编辑；录音时可以插入图片和笔记，和转写保存在同一个文件里。</p></div>
+    <div class="card"><h3>钉钉 A1：一键标重点</h3><p>边录边拍边标记，一键标出重点；内置 36 类场景模板（会议、课堂、采访、咨询等），企业可以自定义。</p></div>
+    <div class="card"><h3>飞书录音豆：停止后马上给速览</h3><p>结束录音立即弹出要点、待办和观点摘录，完整纪要稍后生成；纪要里的章节、决策、金句能跳回对应原文。</p></div>
+    <div class="card"><h3>Omi：每天自动回顾，自带 Key</h3><p>每天结束自动生成回顾；待办和系统提醒事项双向同步；可以填自己的转写服务 Key。手机端转写免费且不限量。</p></div>
+    <div class="card"><h3>Limitless：同意模式</h3><p>“同意模式”会播放提示音，周围的人没有确认同意时自动暂停录音。产品已于 2025 年 12 月 5 日停售（被 Meta 收购）。</p></div>
+  </div>
+
+  <h3>你已经领先的地方，建议保留</h3>
+  <ul class="plain">
+    <li>原话只来自转写、不可改写；AI 写的要点必须带逐字引用，引用对不上原文就不发布。本次查到的竞品资料里，没有看到同等严格的“核对原话”机制。</li>
+    <li>本机优先：数据外发前要确认，服务地址区分境内、境外、局域网；改了地址要重新确认。</li>
+    <li>服务商自选，Key 自己保管（Omi 在 2026 年 4 月才加上“自带 Key”）。</li>
+  </ul>
+</section>
+
+<section id="roadmap">
+  <h2>改进路线</h2>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>优先级</th><th>功能</th><th>借鉴自</th><th>做法</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>P0</td><td>区分说话人 + 逐句时间</td><td>Plaud、钉钉、飞书、TicNote、讯飞</td><td>百炼 Qwen-Audio-3.1-ASR 返回 <code>speaker_id</code> 和每句起止时间，存进原话表已预留的列；点一句从该句回听。</td><td><span class="pill blue">4.2 已写</span></td></tr>
+        <tr><td>P0</td><td>会议整场统一说话人编号</td><td>Plaud（整条录音处理）</td><td>会议结束后把各片段拼成一个文件，用 filetrans 模型整场转写，再按开始时间拆回片段。</td><td><span class="pill blue">4.2 已写</span></td></tr>
+        <tr><td>P0</td><td>给说话人改名</td><td>Plaud、TicNote</td><td>在原话里点“说话人 N”改成名字，只是这条记录的显示名，保存在本机，不保存声纹。</td><td><span class="pill blue">4.2 已写</span></td></tr>
+        <tr><td>P0</td><td>热词</td><td>钉钉（行业术语）、百炼热词</td><td>设置里填人名、项目名，转写时作为百炼即时热词（权重 4）。</td><td><span class="pill blue">4.2 已写</span></td></tr>
+        <tr><td>P0</td><td>导出原话</td><td>飞书（导出 Word/PDF）、各家</td><td>记录详情菜单导出纯文本：时间、说话人、原话，经系统分享发出。</td><td><span class="pill blue">4.2 已写</span></td></tr>
+        <tr><td>P1</td><td>录音中“标记重点”</td><td>钉钉 A1、Plaud</td><td>录音页加一个按钮记下时间点（新表），详情页显示标记，整理时优先覆盖标记附近的原话。</td><td>建议下一步</td></tr>
+        <tr><td>P1</td><td>场景模板</td><td>钉钉 36 类、Plaud 自定义</td><td>会议、访谈、课堂、一对一四个模板起步；数据表已有 <code>templateId</code>。</td><td>建议下一步</td></tr>
+        <tr><td>P1</td><td>整理时带上“谁说的”</td><td>飞书智能纪要</td><td>把说话人名字交给整理模型，要点写成“张三提出……”；引用仍然逐字。</td><td>建议下一步</td></tr>
+        <tr><td>P1</td><td>我的声纹</td><td>Plaud 声音档案、Omi speech profile</td><td>只登记本人声音，存在手机里（本机声纹模型，如 sherpa-onnx），单独征得同意，可一键删除；把“说话人 N”自动标成“我”。</td><td>需单独同意</td></tr>
+        <tr><td>P1</td><td>每天自动回顾</td><td>Omi、Bee</td><td>每天固定时间自动排队生成“今日复盘”，现在需要手动点。</td><td>建议下一步</td></tr>
+        <tr><td>P1</td><td>转写和整理分开配置</td><td>Omi 自带 Key</td><td>允许转写用 ElevenLabs / Soniox、整理用另一家。数据外发同意要改为按两个地址分别确认。</td><td>涉及同意流程</td></tr>
+        <tr><td>P2</td><td>实时字幕</td><td>钉钉、飞书、TicNote</td><td>百炼有流式模型；对“找回说过的话”帮助有限，耗电和流量更高。</td><td>暂缓</td></tr>
+        <tr><td>P2</td><td>待办同步到系统日历/提醒</td><td>Omi</td><td>确认后的待办写入系统日历或提醒事项。</td><td>暂缓</td></tr>
+        <tr><td>P2</td><td>录音提示音（同意模式）</td><td>Limitless</td><td>开始录音时可选播放提示音，方便告知在场的人。</td><td>暂缓</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">不建议跟进：模板社区、PPT/网页生成、Slack/Notion 集成、思维导图。这些偏团队协作，和“个人自用、找回原话”的定位不一致。</p>
+</section>
+
+<section id="models">
+  <h2>模型方案</h2>
+  <h3>先分清两个概念</h3>
+  <div class="grid2">
+    <div class="card"><h3>说话人分离</h3><p>回答“谁在什么时候说话”，给出“说话人 1、2、3”，不知道具体是谁。每次转写各自编号。百炼、豆包、ElevenLabs、Soniox 提供的都是这一种。你听说的“能做声纹分离的 ASR”，指的就是转写和分离一次完成的新模型。</p></div>
+    <div class="card"><h3>声纹识别</h3><p>记住某个人的声音，下次自动认出是谁。需要保存声音特征（声纹），属于生物识别信息。Plaud 自动标签、TicNote 声纹列表、Omi 声音档案属于这一种。</p></div>
+  </div>
+
+  <h3>转写（ASR）推荐</h3>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>用户</th><th>服务 · 模型</th><th>说话人</th><th>时间戳</th><th>音频怎么传</th><th>价格</th><th>结论</th></tr></thead>
+      <tbody>
+        <tr><td>境内</td><td>阿里云百炼（北京）<br><code>qwen-audio-3.1-asr-flash</code></td><td>支持，<code>speaker_diarization_enabled</code></td><td>句级、词级</td><td>同步；Base64 ≤ 10 MB，或公网/临时 URL；单次 ≤ 5 分钟</td><td class="num">按 token：输入 0.8 元、输出 2.7 元 / 百万<br>估算约 0.1 元/小时</td><td><span class="pill ok">首选，已接入</span></td></tr>
+        <tr><td>境内</td><td>阿里云百炼（北京）<br><code>qwen-audio-3.1-asr-flash-filetrans</code> / <code>fun-asr</code></td><td>支持，<code>diarization_enabled</code>，仅单声道</td><td>句级、词级</td><td>异步；只收 URL，最长 12 小时（开分离建议 ≤ 2 小时）</td><td class="num">Fun-ASR 0.00022 元/秒<br>（约 0.79 元/小时）</td><td><span class="pill ok">会议整场用，已接入</span></td></tr>
+        <tr><td>境内</td><td>火山引擎 · 豆包录音文件识别（Seed-ASR 2.0 标准版）</td><td>支持，<code>enable_speaker_info</code>，10 人以内效果较好</td><td>句级、词级</td><td>异步；<code>audio.url</code> 必填，需要先传到对象存储；&lt; 512 MB</td><td>本次未查到</td><td><span class="pill blue">备选</span> 热词可直传 5000 个</td></tr>
+        <tr><td>境内</td><td>阶跃 StepAudio 2.5 ASR（现用）</td><td>资料未提</td><td>第三方文档称“有则返回”</td><td>Step Plan SSE，Base64</td><td>套餐</td><td><span class="pill warn">保留作后备</span></td></tr>
+        <tr><td>境外</td><td>阿里云百炼（新加坡）<br>同上两个模型</td><td>支持</td><td>句级、词级</td><td>同上；数据在新加坡处理</td><td class="num">Fun-ASR 0.00026 元/秒</td><td><span class="pill ok">首选，已接入</span> 一个 Key 管转写和整理</td></tr>
+        <tr><td>境外</td><td>ElevenLabs Scribe v2</td><td>支持，最多 32 人</td><td>词级、字级</td><td>同步直传，文件 ≤ 5 GB；热词 1000 个</td><td class="num">$0.000061/秒（约 $0.22/小时，OpenRouter 列价）</td><td><span class="pill blue">备选</span> 需“转写和整理分开配置”</td></tr>
+        <tr><td>境外</td><td>Soniox</td><td>支持，最多 15 人</td><td>逐 token</td><td>异步或实时</td><td class="num">约 $0.10–0.12/小时</td><td><span class="pill blue">备选</span> 厂商自称中文更准，未见公开数字</td></tr>
+        <tr><td>境外</td><td>Deepgram Nova-3</td><td>支持</td><td>词级</td><td>同步直传</td><td class="num">$0.0043/分钟（第三方页）</td><td>中文效果需自测</td></tr>
+        <tr><td>境外</td><td>AssemblyAI Universal-3.5 Pro</td><td>支持（+$0.02/小时）</td><td>词级</td><td>上传后异步</td><td class="num">$0.21/小时</td><td>价格页没写中文支持</td></tr>
+        <tr><td>境外</td><td>OpenAI <code>gpt-4o-transcribe-diarize</code></td><td>支持，可传最多 4 段已知说话人样本</td><td>段级</td><td>≤ 25 MB</td><td class="num">按 token</td><td><span class="pill warn">不建议</span> 已弃用，2027-02-26 下线；新的 gpt-transcribe 文档没写说话人分离</td></tr>
+        <tr><td>本机</td><td>sherpa-onnx（pyannote 分段 + 3D-Speaker 声纹）</td><td>支持，离线</td><td>段级</td><td>不出手机</td><td>免费</td><td>适合做“我的声纹”；安装包变大、更耗电</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">百炼 3.1 的“约 0.1 元/小时”来自一位开发者在 GitHub 上的小样本实测（6 次请求、32.6 秒音频，约 31 个输入 token/秒），属于估算；账单以阿里云为准。新模型动向：阿里 Qwen-Audio-3.1-ASR 技术报告（arXiv 2610.28711）把文字、说话人、时间联合输出；复旦 MOSS Transcribe Diarize 论文在 AISHELL-4 会议集上 cpCER 为 20.04，同表豆包 27.86、ElevenLabs 37.95，论文没有说明是否开源权重。</p>
+
+  <h3>整理（大模型）推荐</h3>
+  <p>“说了啥”的整理任务要求输出 JSON、引用必须逐字来自原文，不需要很强的推理，选便宜稳定的模型即可。</p>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>用户</th><th>推荐</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>境内</td><td>百炼 <code>qwen3.7-plus</code>（4.2 默认），想更省用 <code>qwen3.8-flash</code></td><td>和转写同一个 Key；1M 上下文，支持结构化输出。百炼已把 <code>qwen-plus</code> 等别名列为旧版。</td></tr>
+        <tr><td>境内</td><td>DeepSeek <code>deepseek-flash</code>（V4.1-Flash）</td><td>第三方整理的价格：非高峰输入 $0.15、输出 $0.60 / 百万 token；<code>deepseek-chat</code> 已于 2026-07-24 停用。</td></tr>
+        <tr><td>境内</td><td>阶跃 <code>step-router-v1</code>（现用）</td><td>已有套餐可以继续用；但转写换百炼时，转写和整理会分属两家，需要等“分开配置”。</td></tr>
+        <tr><td>境外</td><td>百炼新加坡 <code>qwen3.7-plus</code></td><td>一个 Key 管两件事。该型号在新加坡是否上架 <span class="pill warn">待确认</span>，不行就在设置里改型号。</td></tr>
+        <tr><td>境外</td><td>Gemini Flash、GPT mini、Claude Haiku 这一档</td><td>价格本次未核实，以各家官网为准；需要“转写和整理分开配置”后才能和其他转写服务搭配。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>合规提醒</h3>
+  <ul class="plain">
+    <li>中国《个人信息保护法》第 28 条把生物识别信息列为敏感个人信息，第 29 条要求处理前取得单独同意。声纹属于生物识别信息。欧盟 GDPR 第 9 条、美国伊利诺伊州 BIPA 也有类似要求。</li>
+    <li>建议：说话人分离照常用（不保存声纹）；“我的声纹”只登记本人、存在手机里、单独确认、可删除；别人只用手动起的名字，不建声纹库。以上不是法律意见。</li>
+    <li>境内用户选百炼新加坡、ElevenLabs 等服务，录音会传到境外。App 的外发确认页已经区分境内和境外；4.2 修正了百炼新加坡被误标为“境内”的问题。</li>
+  </ul>
+</section>
+
+<section id="shipped">
+  <h2>4.2 改了什么</h2>
+  <div class="flow" aria-label="会议整场转写流程">
+    <span class="step">会议停止</span><span class="arrow">→</span>
+    <span class="step">各 5 分钟片段解码拼成一个 WAV</span><span class="arrow">→</span>
+    <span class="step">上传到百炼临时存储</span><span class="arrow">→</span>
+    <span class="step">filetrans 整场转写 + 区分说话人</span><span class="arrow">→</span>
+    <span class="step">按每句开始时间拆回片段</span><span class="arrow">→</span>
+    <span class="step">一次写入原话，再整理</span>
+  </div>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>改动</th><th>位置</th></tr></thead>
+      <tbody>
+        <tr><td>百炼北京、新加坡两个预设；转写走百炼原生接口，整理走兼容接口；对百炼关闭“思考模式”避免非流式调用被拒</td><td><code>AppPreferences</code>、<code>AiClient</code></td></tr>
+        <tr><td>百炼转写适配：≤ 7 MB 直传 Base64，更大文件走临时存储；会议整场异步转写、轮询、下载结果；静音返回空而不是失败</td><td><code>network/DashScopeAsr.kt</code>（新）</td></tr>
+        <tr><td>逐句时间和说话人写入原话表已有的 <code>segmentsJson</code>；会议整场转写后按时间拆回片段，一次事务保存</td><td><code>data/model/Asr.kt</code>（新）、<code>ProcessingCoordinator</code>、<code>MemoryRepository</code></td></tr>
+        <tr><td>原话里显示“说话人 N”，点击改名；片段内编号会注明只在本片段有效</td><td><code>DetailScreens</code>、<code>ui/logic/Speakers.kt</code>（新）</td></tr>
+        <tr><td>数据库结构 8：记录表新增 <code>speakerNamesJson</code>；升级前自动备份到 <code>pre-v8/</code></td><td><code>AppDatabase</code>、<code>MemoryEntities</code></td></tr>
+        <tr><td>设置：区分说话人开关、热词</td><td><code>SettingsScreens</code></td></tr>
+        <tr><td>导出原话（时间 + 说话人 + 原话）</td><td><code>DetailScreens</code>、<code>TranscriptExport</code></td></tr>
+        <tr><td>百炼新加坡、工作空间新加坡/美国域名标为“境外”</td><td><code>ServiceRegion</code></td></tr>
+        <tr><td>新增测试：百炼接口（模拟服务器，含临时上传、整场轮询、静音、失败、外发同意拦截）、存储格式、拆分、改名、导出、地区判断、热词清洗、7→8 迁移</td><td><code>SpeakerAsrTest</code>、<code>SpeakerSegmentsTest</code>、<code>DatabaseMigrationTest</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>验证状态</h3>
+  <ul class="plain">
+    <li><span class="pill warn">未编译</span> 这次的环境没有 Android SDK，也下载不了依赖。4.1.1 和 4.2 的改动都还没编译、没跑测试。请在仓库根目录运行 <code>powershell -ExecutionPolicy Bypass -File .\_backup\review-2026-10-27\verify.ps1</code>，结果写入同目录的 <code>verify.log</code>。</li>
+    <li>真机需要验证：百炼 Key 的“测试连接”；随身录满 5 分钟的片段（转成 WAV 约 9.6 MB，会走临时存储）；两段以上的会议整场转写和说话人编号；改名；导出；新加坡预设显示“境外”。</li>
+    <li><span class="pill warn">待确认</span> 静音片段在同步接口是返回空文字还是报错；<code>speaker_id</code> 是否从 0 开始（代码两种都兼容）；AAC 原件能否直传（目前先转 WAV）；百炼临时存储官方说明不建议用于生产，个人自用可以接受，文件 48 小时后失效。</li>
+    <li>改动前的工作区备份在 <code>_backup/2026-10-27-speakers/</code>，本次改动单独导出为 <code>v4.2-changes.diff</code>。</li>
+  </ul>
+</section>
+
+<section id="sources">
+  <details open>
+    <summary>资料来源</summary>
+    <ol class="sources">
+      <li><a href="https://support.plaud.ai/hc/en-us/articles/54027338385177-Auto-speaker-labeling">Plaud 帮助中心：Auto speaker labeling</a></li>
+      <li><a href="https://www.plaud.ai/pages/plaud-intelligence">Plaud Intelligence 产品页</a></li>
+      <li><a href="https://uk.plaud.ai/blogs/news/updates-label-the-speakers-and-create-your-own-templates">Plaud：Label the speakers and create your own templates</a></li>
+      <li><a href="https://www.ifanr.com/1635290">爱范儿：钉钉发布首款 AI 硬件 A1</a></li>
+      <li><a href="https://www.qbitai.com/2025/12/360243.html">量子位：钉钉 8.1.10 AI 听记与 A1</a></li>
+      <li><a href="https://www.ifanr.com/1652210">爱范儿：飞书联手安克的 AI 录音豆</a></li>
+      <li><a href="https://m.tech.china.com/hea/articles/20250922/202509221736811.html">中华网：出门问问 TicNote Color 与 Shadow AI 2.0</a></li>
+      <li><a href="https://www.pconline.com.cn/ai/product/374.html">太平洋电脑网：讯飞听见</a></li>
+      <li><a href="https://www.layer3labs.io/comparisons/limitless-vs-bee-vs-omi">Layer3 Labs：Limitless vs Bee vs Omi</a></li>
+      <li><a href="https://omi.featurebase.app/changelog">Omi 更新日志</a></li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/recording-file-recognition">阿里云百炼：录音文件识别（模型、说话人分离、输入方式、上限）</a></li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/non-realtime-speech-recognition-user-guide">阿里云百炼：非实时语音识别对比</a></li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api">阿里云百炼：Qwen-Audio-3.x-ASR-Flash / Fun-ASR-Flash HTTP API</a></li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/fun-asr-recorded-speech-recognition-http-api">阿里云百炼：Fun-ASR 录音文件识别 HTTP API</a></li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/get-temporary-file-url">阿里云百炼：上传本地文件获取临时 URL</a></li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/fun-asr">阿里云百炼：Fun-ASR 价格</a></li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/text-generation-model">阿里云百炼：文本生成模型</a></li>
+      <li><a href="https://github.com/xifan2333/vinput-registry/issues/90">GitHub：qwen-audio-3.1-asr-flash 调用示例与费用对比</a></li>
+      <li><a href="https://qwenaudio.github.io/qwen-audio-3.1-asr/">Qwen-Audio-3.1-ASR 介绍页</a></li>
+      <li><a href="https://arxiv.org/abs/2610.28711">arXiv 2610.28711：Qwen-Audio-3.1-ASR Technical Report</a></li>
+      <li><a href="https://docs.volcengine.com/docs/doubao-voice/large-model-recording-file-recognition-standard-version-api?lang=zh">火山引擎：豆包录音文件识别标准版 API</a></li>
+      <li><a href="https://docs.volcengine.com/docs/doubao-voice/large-model-recording-file-lite-recognition-api?lang=zh">火山引擎：录音文件极速版识别 HTTP</a></li>
+      <li><a href="https://empiriolabs.ai/models/stepaudio-2-5-asr">Empirio Labs：StepAudio 2.5 ASR API</a></li>
+      <li><a href="https://developers.openai.com/api/docs/guides/speech-to-text">OpenAI：Speech to text 指南</a></li>
+      <li><a href="https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create">OpenAI：Create transcription 参考</a></li>
+      <li><a href="https://elevenlabs.io/docs/api-reference/speech-to-text/convert">ElevenLabs：Speech to Text API</a></li>
+      <li><a href="https://openrouter.ai/elevenlabs/scribe-v2">OpenRouter：ElevenLabs Scribe v2</a></li>
+      <li><a href="https://soniox.com/docs/stt/concepts/speaker-diarization">Soniox：Speaker diarization</a></li>
+      <li><a href="https://soniox.com/compare-stt/soniox-vs-elevenlabs/chinese">Soniox vs ElevenLabs（中文）</a></li>
+      <li><a href="https://convertaudiototext.com/blog/deepgram-nova-3-explained">Deepgram Nova-3 价格（第三方）</a></li>
+      <li><a href="https://www.assemblyai.com/llms/pricing.md">AssemblyAI 价格</a></li>
+      <li><a href="https://arxiv.org/pdf/2601.01554">arXiv 2601.01554：MOSS Transcribe Diarize Technical Report</a></li>
+      <li><a href="https://k2-fsa.github.io/sherpa/onnx/speaker-diarization/index.html">sherpa-onnx：Speaker diarization</a></li>
+      <li><a href="https://www.morphllm.com/deepseek-api">Morph：DeepSeek API 型号与价格</a></li>
+    </ol>
+  </details>
+</section>
+</main>
+
+</body>
+</html>
