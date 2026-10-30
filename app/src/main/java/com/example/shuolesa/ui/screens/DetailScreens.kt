@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -430,55 +431,80 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
         val brand=com.example.shuolesa.theme.LocalBrandColors.current
         val phase=state.phase;val paused=phase==CapturePhase.PAUSED;val recording=phase==CapturePhase.RECORDING
         val primary=MaterialTheme.colorScheme.primary
-        Box(Modifier.fillMaxSize().background(brand.stage)) {
-          Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal=24.dp)) {
-            Row(Modifier.fillMaxWidth().padding(top=4.dp),verticalAlignment=Alignment.CenterVertically) {
-                IconButton(onClick=onBack) { Icon(Icons.Outlined.KeyboardArrowDown,"收起",tint=brand.onStage) }
-                Text("${state.modeLabel}录音",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,color=brand.onStage,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
-                Spacer(Modifier.size(48.dp))
+        val pose=when(phase){CapturePhase.RECORDING->CeerPose.LISTENING;CapturePhase.PAUSED->CeerPose.PAUSED;CapturePhase.ERROR->CeerPose.ERROR;CapturePhase.IDLE->CeerPose.SUCCESS;else->CeerPose.THINKING}
+        val captioning=captions?.showing==true
+        val busy=captioning || recent!=null || state.marks.isNotEmpty()
+        val controlsEnabled=phase==CapturePhase.RECORDING || paused
+        // orb, state, time and waveform
+        val status:@Composable (Dp,Boolean)->Unit={ orb,compact ->
+            CaptureOrb(pose,state.level,recording,orb)
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(when { recording->brand.record;paused->brand.onStageMuted;else->Color.Transparent }))
+                Text(when(phase){CapturePhase.STARTING->"准备录音";CapturePhase.RECORDING->"正在听";CapturePhase.PAUSED->"已暂停";CapturePhase.STOPPING->"正在保存";CapturePhase.ERROR->"录音已中断";else->"原音已保存"},
+                    style=MaterialTheme.typography.titleMedium,color=brand.onStage) }
+            Text(duration(state.durationMs),Modifier.padding(vertical=if(compact) 4.dp else 8.dp),
+                style=if(compact) MaterialTheme.typography.displaySmall.copy(fontWeight=FontWeight.Light) else MaterialTheme.typography.displayMedium,color=brand.onStage)
+            val ink=if(paused) brand.onStageMuted.copy(alpha=0.5f) else primary // 暂停态：波形变灰
+            Canvas(Modifier.fillMaxWidth().height(if(compact) 36.dp else 48.dp)) { val step=size.width/48
+                samples.forEachIndexed { index,level -> val amplitude=(level*size.height*3).coerceIn(4f,size.height)
+                    val x=size.width-(samples.size-index)*step
+                    drawLine(ink,Offset(x,(size.height-amplitude)/2),Offset(x,(size.height+amplitude)/2),3.dp.toPx(),cap=androidx.compose.ui.graphics.StrokeCap.Round) } }
+        }
+        // counts, notes, live captions (or the newest 原话), marks
+        val details:@Composable ()->Unit={
+            Text("已保存 ${state.savedChunks} 个片段 · 已转写 $transcribed 个",style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted)
+            Text("原音保存在手机里，收起后继续录",style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted)
+            state.error?.let { Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=12.dp)) }
+            captions?.note?.let { Text(it,Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted,textAlign=androidx.compose.ui.text.style.TextAlign.Center) }
+            // v5.2: live captions while recording; without them, the newest 片段 原话 as before
+            if(captioning) { Spacer(Modifier.height(16.dp));CaptionPanel(captions!!) }
+            else recent?.let { text -> Spacer(Modifier.height(16.dp))
+                Surface(Modifier.fillMaxWidth(),shape=MaterialTheme.shapes.large,color=brand.stageRaised) {
+                    Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                        Text("最近转写",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
+                        Text("……$text",style=MaterialTheme.typography.bodyMedium,color=brand.onStage,maxLines=3,overflow=TextOverflow.Ellipsis) } } }
+            if(state.marks.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top=12.dp).horizontalScroll(rememberScrollState()),
+                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("已标记 ${state.marks.size} 处",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
+                val c=com.example.shuolesa.theme.LocalRegionColors.current
+                state.marks.takeLast(6).forEach { at -> Surface(color=c.warnBg,shape=CircleShape) {
+                    Text(SegmentPlayback.timeLabel(at),Modifier.padding(horizontal=10.dp,vertical=3.dp),style=MaterialTheme.typography.labelMedium,color=c.warnText) } }
             }
-            // The middle is centred and scrolls on short screens, so the buttons below always stay on screen.
-            Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) {
-              Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally) {
-                val pose=when(phase){CapturePhase.RECORDING->CeerPose.LISTENING;CapturePhase.PAUSED->CeerPose.PAUSED;CapturePhase.ERROR->CeerPose.ERROR;CapturePhase.IDLE->CeerPose.SUCCESS;else->CeerPose.THINKING}
-                val captioning=captions?.showing==true
-                CaptureOrb(pose,state.level,recording,small=captioning || recent!=null || state.marks.isNotEmpty())
-                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(when { recording->brand.record;paused->brand.onStageMuted;else->Color.Transparent }))
-                    Text(when(phase){CapturePhase.STARTING->"准备录音";CapturePhase.RECORDING->"正在听";CapturePhase.PAUSED->"已暂停";CapturePhase.STOPPING->"正在保存";CapturePhase.ERROR->"录音已中断";else->"原音已保存"},
-                        style=MaterialTheme.typography.titleMedium,color=brand.onStage) }
-                Text(duration(state.durationMs),Modifier.padding(vertical=8.dp),style=MaterialTheme.typography.displayMedium,color=brand.onStage)
-                val ink=if(paused) brand.onStageMuted.copy(alpha=0.5f) else primary // 暂停态：波形变灰
-                Canvas(Modifier.fillMaxWidth().height(48.dp)) { val step=size.width/48
-                    samples.forEachIndexed { index,level -> val amplitude=(level*size.height*3).coerceIn(4f,size.height)
-                        val x=size.width-(samples.size-index)*step
-                        drawLine(ink,Offset(x,(size.height-amplitude)/2),Offset(x,(size.height+amplitude)/2),3.dp.toPx(),cap=androidx.compose.ui.graphics.StrokeCap.Round) } }
-                Spacer(Modifier.height(12.dp))
-                Text("已保存 ${state.savedChunks} 个片段 · 已转写 $transcribed 个",style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted)
-                Text("原音保存在手机里，收起后继续录",style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted)
-                state.error?.let { Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=12.dp)) }
-                captions?.note?.let { Text(it,Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted,textAlign=androidx.compose.ui.text.style.TextAlign.Center) }
-                // v5.2: live captions while recording; without them, the newest 片段 原话 as before
-                if(captioning) { Spacer(Modifier.height(16.dp));CaptionPanel(captions!!) }
-                else recent?.let { text -> Spacer(Modifier.height(16.dp))
-                    Surface(Modifier.fillMaxWidth(),shape=MaterialTheme.shapes.large,color=brand.stageRaised) {
-                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                            Text("最近转写",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
-                            Text("……$text",style=MaterialTheme.typography.bodyMedium,color=brand.onStage,maxLines=3,overflow=TextOverflow.Ellipsis) } } }
-                if(state.marks.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top=12.dp).horizontalScroll(rememberScrollState()),
-                    verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text("已标记 ${state.marks.size} 处",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
-                    val c=com.example.shuolesa.theme.LocalRegionColors.current
-                    state.marks.takeLast(6).forEach { at -> Surface(color=c.warnBg,shape=CircleShape) {
-                        Text(SegmentPlayback.timeLabel(at),Modifier.padding(horizontal=10.dp,vertical=3.dp),style=MaterialTheme.typography.labelMedium,color=c.warnText) } }
+        }
+        val mark:@Composable (Boolean)->Unit={ compact -> StageButton(Icons.Outlined.Flag,"标记",controlsEnabled,onMark,compact) }
+        val stop:@Composable (Boolean)->Unit={ compact -> StopButton(phase!=CapturePhase.STOPPING,onStop,compact) }
+        val pauseResume:@Composable (Boolean)->Unit={ compact ->
+            StageButton(if(paused) Icons.Default.PlayArrow else Icons.Default.Pause,if(paused) "继续" else "暂停",controlsEnabled,onPauseResume,compact) }
+        val done:@Composable ()->Unit={ Button(onClick=onBack,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).padding(bottom=8.dp)) { Text("回到记忆") } }
+        Box(Modifier.fillMaxSize().background(brand.stage)) {
+          // v5.2.1: landscape gets three columns; the portrait column did not fit the height and clipped the orb
+          BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal=24.dp)) {
+            val wide=maxWidth>maxHeight
+            Column(Modifier.fillMaxSize()) {
+              Row(Modifier.fillMaxWidth().padding(top=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                  IconButton(onClick=onBack) { Icon(Icons.Outlined.KeyboardArrowDown,"收起",tint=brand.onStage) }
+                  Text("${state.modeLabel}录音",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,color=brand.onStage,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+                  Spacer(Modifier.size(48.dp))
+              }
+              if(!wide) {
+                // The middle is centred and scrolls on short screens, so the buttons below always stay on screen.
+                Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) {
+                  Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally) {
+                    status(if(busy) 168.dp else 232.dp,false);Spacer(Modifier.height(12.dp));details()
+                  }
                 }
+                if(state.active) Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=24.dp),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.Top) {
+                    mark(false);stop(false);pauseResume(false) } else done()
+              } else Row(Modifier.weight(1f).fillMaxWidth().padding(bottom=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(24.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally,
+                    verticalArrangement=Arrangement.Center) { status(124.dp,true) }
+                Column(Modifier.weight(1.3f).fillMaxHeight().verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally,
+                    verticalArrangement=Arrangement.Center) { details() }
+                if(state.active) Column(Modifier.fillMaxHeight(),horizontalAlignment=Alignment.CenterHorizontally,
+                    verticalArrangement=Arrangement.spacedBy(8.dp,Alignment.CenterVertically)) { pauseResume(true);stop(true);mark(true) }
+                else Box(Modifier.width(200.dp)) { done() }
               }
             }
-            if(state.active) Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=24.dp),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.Top) {
-                StageButton(Icons.Outlined.Flag,"标记",phase==CapturePhase.RECORDING || paused,onMark)
-                StopButton(phase!=CapturePhase.STOPPING,onStop)
-                StageButton(if(paused) Icons.Default.PlayArrow else Icons.Default.Pause,if(paused) "继续" else "暂停",phase==CapturePhase.RECORDING || paused,onPauseResume)
-            } else Button(onClick=onBack,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).padding(bottom=8.dp)) { Text("回到记忆") }
           }
         }
     }
@@ -501,7 +527,7 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
         }
     }
 }
-@Composable private fun CaptureOrb(pose:CeerPose,level:Float,live:Boolean,small:Boolean) {
+@Composable private fun CaptureOrb(pose:CeerPose,level:Float,live:Boolean,box:androidx.compose.ui.unit.Dp) {
     val primary=MaterialTheme.colorScheme.primary
     val brand=com.example.shuolesa.theme.LocalBrandColors.current
     val smooth by androidx.compose.animation.core.animateFloatAsState((level*4f).coerceIn(0f,1f),androidx.compose.animation.core.tween(140),label="level")
@@ -510,7 +536,6 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
             androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(2200),androidx.compose.animation.core.RepeatMode.Reverse),label="b")
         value
     } else 0f
-    val box=if(small) 168.dp else 232.dp
     Box(Modifier.size(box),contentAlignment=Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             // The widest ring (2.5 × base) is exactly the box, so the glow never clips or reaches the text below.
@@ -523,19 +548,19 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
         Ceer(pose,Modifier.size(box*0.66f),ink=brand.stage,paper=brand.onStage,accent=primary,energy=smooth,rings=false,interactive=true)
     }
 }
-@Composable private fun StageButton(icon:androidx.compose.ui.graphics.vector.ImageVector,label:String,enabled:Boolean,onClick:()->Unit) {
+@Composable private fun StageButton(icon:androidx.compose.ui.graphics.vector.ImageVector,label:String,enabled:Boolean,onClick:()->Unit,compact:Boolean=false) {
     val brand=com.example.shuolesa.theme.LocalBrandColors.current
-    Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Surface(onClick=onClick,enabled=enabled,shape=CircleShape,color=brand.stageRaised,modifier=Modifier.size(64.dp)) {
-            Box(contentAlignment=Alignment.Center) { Icon(icon,label,Modifier.size(28.dp),tint=if(enabled) brand.onStage else brand.onStageMuted.copy(alpha=0.4f)) } }
+    Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(if(compact) 4.dp else 8.dp)) {
+        Surface(onClick=onClick,enabled=enabled,shape=CircleShape,color=brand.stageRaised,modifier=Modifier.size(if(compact) 52.dp else 64.dp)) {
+            Box(contentAlignment=Alignment.Center) { Icon(icon,label,Modifier.size(if(compact) 24.dp else 28.dp),tint=if(enabled) brand.onStage else brand.onStageMuted.copy(alpha=0.4f)) } }
         Text(label,style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
     }
 }
-@Composable private fun StopButton(enabled:Boolean,onClick:()->Unit) {
+@Composable private fun StopButton(enabled:Boolean,onClick:()->Unit,compact:Boolean=false) {
     val brand=com.example.shuolesa.theme.LocalBrandColors.current
-    Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Surface(onClick=onClick,enabled=enabled,shape=CircleShape,color=brand.record,modifier=Modifier.size(84.dp).semantics { contentDescription="停止并整理" }) {
-            Box(contentAlignment=Alignment.Center) { Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(brand.onRecord)) } }
+    Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(if(compact) 4.dp else 8.dp)) {
+        Surface(onClick=onClick,enabled=enabled,shape=CircleShape,color=brand.record,modifier=Modifier.size(if(compact) 68.dp else 84.dp).semantics { contentDescription="停止并整理" }) {
+            Box(contentAlignment=Alignment.Center) { Box(Modifier.size(if(compact) 22.dp else 28.dp).clip(RoundedCornerShape(8.dp)).background(brand.onRecord)) } }
         Text("停止并整理",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
     }
 }

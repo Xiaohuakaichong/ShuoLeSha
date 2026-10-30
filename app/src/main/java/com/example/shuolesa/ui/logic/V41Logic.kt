@@ -58,9 +58,12 @@ object BannerLogic {
                 val first = config.first()
                 if (first.reasonCode == "CLEARTEXT_BLOCKED") Banner(BannerKind.CLEARTEXT, "等配置", "服务地址被拦截",
                     "http 地址不安全，请改用 https 或 localhost。原音都在手机里，改好后会自动继续。", BannerAction.FIX_ADDRESS, "去修复", config.size, config.map { it.sessionId })
-                else Banner(BannerKind.CONFIG, "等配置", "${config.size} 条记录在等配置",
-                    (first.message ?: when (first.reasonCode) { "KEY_INVALID" -> "服务密钥已失效"; "ADDRESS_INVALID" -> "服务地址无法访问"; else -> "还没配置转写服务" }) +
-                        "。原音都在手机里，修好后自动继续。", BannerAction.FIX, "去修复", config.size, config.map { it.sessionId })
+                else {
+                    val reason = (first.message ?: when (first.reasonCode) { "KEY_INVALID" -> "服务密钥已失效"; "ADDRESS_INVALID" -> "服务地址无法访问"; else -> "还没配置转写服务" }).trimEnd('。')
+                    // v5.2.1: the reason often already says it continues by itself; say that only once
+                    Banner(BannerKind.CONFIG, "等配置", "${config.size} 条记录在等配置",
+                        reason + if ("自动继续" in reason) "。原音都在手机里。" else "。原音都在手机里，修好后自动继续。", BannerAction.FIX, "去修复", config.size, config.map { it.sessionId })
+                }
             }
             network.isNotEmpty() -> Banner(BannerKind.NETWORK, "等网络", "${network.size} 条记录等网络",
                 "原音等网络恢复后自动转写。", BannerAction.VIEW, "查看", network.size, network.map { it.sessionId })
