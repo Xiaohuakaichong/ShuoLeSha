@@ -47,7 +47,7 @@ data class MemoryUi(val cards:List<MemoryCard>,val banner:Banner?,val blindFaile
     var rangeStart by rememberSaveable {mutableStateOf<Long?>(null)};var rangeEnd by rememberSaveable {mutableStateOf<Long?>(null)}
     var dates by remember {mutableStateOf(false)}
     val range=rangeStart?.let { DateRange(it,rangeEnd!!) }
-    val cards=remember(snapshot,mode,rangeStart,rangeEnd) { snapshot.cards().filter { FilterLogic.matches(it.mode,it.time,mode,range) } }
+    val cards=remember(snapshot,mode,rangeStart,rangeEnd,consentPending) { snapshot.cards(!consentPending).filter { FilterLogic.matches(it.mode,it.time,mode,range) } }
     val banner=remember(snapshot,consentPending) { BannerLogic.pick(snapshot.sessions.map {
         BannerInput(it.id,it.processingState,ProcessingReason.code(it.error)?.name,ProcessingReason.message(it.error)) },consentPending) }
     MemoryContent(MemoryUi(cards,banner,blindFailed,snapshot.sessions.isNotEmpty()),mode,range,

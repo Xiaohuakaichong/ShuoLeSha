@@ -119,6 +119,13 @@ class AiClient(private val http: OkHttpClient = OkHttpClient.Builder()
         OutboundGate.require(outboundAllowed())
         return sendNow(request,if(long) longHttp else http,maxBytes)
     }
+    /** v5.2: realtime captions keep a WebSocket open; same consent gate as every request, no call timeout. */
+    internal suspend fun openWebSocket(request: Request,listener: okhttp3.WebSocketListener): okhttp3.WebSocket {
+        OutboundGate.require(outboundAllowed())
+        return socketHttp.newWebSocket(request,listener)
+    }
+    private val socketHttp by lazy { http.newBuilder().callTimeout(0,TimeUnit.SECONDS).readTimeout(0,TimeUnit.SECONDS)
+        .pingInterval(20,TimeUnit.SECONDS).build() }
     private val longHttp by lazy { http.newBuilder().callTimeout(30,TimeUnit.MINUTES)
         .writeTimeout(10,TimeUnit.MINUTES).readTimeout(5,TimeUnit.MINUTES).build() }
 

@@ -122,14 +122,14 @@ import com.example.shuolesa.ui.logic.*
             StatusPill(status)
         }
         Text(card.title,style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
-        // v4.2: cards still being processed show how many 片段 already have 原话 (转写 7/9 段).
-        val inProgress=card.total>0 && card.transcribed<card.total &&
-            status in listOf(UiStatus.PROCESSING,UiStatus.WAITING_NETWORK,UiStatus.WAITING_CONFIG)
+        // v5.2: cards still being processed show the current step and the overall progress (ui/logic/ProcessingProgress).
+        val progress=card.progress
         if(card.summary.isNotBlank()) Text(card.summary,style=MaterialTheme.typography.bodyMedium,maxLines=3,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        else if(inProgress) Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
-            LinearProgressIndicator(progress={ card.transcribed.toFloat()/card.total },modifier=Modifier.fillMaxWidth().height(4.dp),
-                color=scheme.primary,trackColor=scheme.primaryContainer,strokeCap=androidx.compose.ui.graphics.StrokeCap.Round)
-            Meta("转写 ${card.transcribed}/${card.total} 段 · 全部转好后整理")
+        else if(progress!=null && status!=UiStatus.EMPTY) Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+            LinearProgressIndicator(progress={ progress },modifier=Modifier.fillMaxWidth().height(4.dp),
+                color=if(status==UiStatus.FAILED) scheme.error else scheme.primary,trackColor=scheme.primaryContainer,
+                strokeCap=androidx.compose.ui.graphics.StrokeCap.Round,gapSize=0.dp,drawStopIndicator={})
+            Row { Meta(card.progressLabel.orEmpty(),Modifier.weight(1f));Meta("${kotlin.math.round(progress*100).toInt()}%") }
         }
         else Meta(when {status==UiStatus.EMPTY || (status==UiStatus.FAILED && card.duration==0L)->"没有录到可用音频，可重新录音"
             status==UiStatus.RECORDING->"保存好的片段会逐步转写，结束后统一整理"

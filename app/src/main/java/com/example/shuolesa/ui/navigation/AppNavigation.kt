@@ -183,7 +183,8 @@ private val ScreenFade=ContentTransform(fadeIn(tween(220,easing=FastOutSlowInEas
                 val vm:DetailViewModel=viewModel(key="detail:${key.id}:${key.topicId}",factory=factory {DetailViewModel(app,key.id,key.topicId)})
                 val player:PlaybackViewModel=viewModel(key="detail-player:${key.id}:${key.topicId}",factory=factory {PlaybackViewModel(app)})
                 Messages(vm,snackbar)
-                DetailScreen(vm,player,back,source,{stack.add(Recall(key.id))},key.focusChunk?.let { Focus(it,key.focusStart,key.focusEnd) })
+                DetailScreen(vm,player,back,source,{stack.add(Recall(key.id))},key.focusChunk?.let { Focus(it,key.focusStart,key.focusEnd) },
+                    onFixService={stack.add(Settings("service"))},onConsent={stack.add(OutboundConsent)})
             }
             entry<Source> { key ->
                 val vm:SourceViewModel=viewModel(key="source:${key.chunkId}",factory=factory {SourceViewModel(app,key.chunkId)})

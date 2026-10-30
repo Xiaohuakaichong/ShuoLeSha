@@ -45,7 +45,11 @@ class MemoryRepository(val database: AppDatabase, private val context: Context, 
     } ?: liveSnapshots
 
     suspend fun createSession(session: RecordingSessionEntity) = dao.insertSession(session)
-    suspend fun registerChunk(chunk: AudioRecordEntity): Long = audio.insert(chunk)
+    /** v5.2: refuses a 片段 for a record that was deleted meanwhile (an import still running when it was deleted). */
+    suspend fun registerChunk(chunk: AudioRecordEntity): Long = database.withTransaction {
+        check(dao.session(chunk.sessionId)!=null) { "这条记录已删除" }
+        audio.insert(chunk)
+    }
     suspend fun sealChunk(id: Long, duration: Long, size: Long, processNow: Boolean) {
         database.withTransaction {
             val compressed=audio.getById(id)?.audioFormat?.startsWith("aac")==true
@@ -154,25 +158,40 @@ class MemoryRepository(val database: AppDatabase, private val context: Context, 
     suspend fun cleanAudio(sessionId: String) {
         val session=dao.session(sessionId) ?: return
         check(session.captureState !in listOf("STARTING","RECORDING","PAUSED","STOPPING")) { "请先停止录音" }
-        check(dao.activeJobs(sessionId)==0) { "这次记录正在处理，请处理结束后再清理或删除" }
+        check(dao.activeJobs(sessionId)==0) { "这次记录正在转写，转写完成后再清理原音" }
+        // v5.2: audio that has no 原话 yet is the only copy of what was said; cleaning it would lose it for good
+        val untranscribed=audio.chunks(sessionId).count { it.status !in setOf("EMPTY","SOURCE","WRITING") && dao.transcript(it.id)==null }
+        check(untranscribed==0) { "还有 $untranscribed 段没转写完，清理原音后就再也无法转写" }
         val paths=audio.chunks(sessionId).map { it.filePath }+listOfNotNull(session.sourcePath)
-        paths.distinct().forEach(::deleteOwnedAudio)
+        paths.distinct().forEach { check(deleteOwnedAudio(it)) { "音频清理失败" } }
     }
 
+    /**
+     * v5.2: rows first, in one transaction, then the files (best effort). It no longer refuses while a job is running:
+     * the caller cancels that job, and a late write from it finds no session and does nothing. Files left by an import
+     * that was still cutting 片段 are removed by their name prefix.
+     */
     suspend fun deleteSession(sessionId: String) {
-        cleanAudio(sessionId)
+        val session=dao.session(sessionId) ?: return
+        check(session.captureState !in listOf("STARTING","RECORDING","PAUSED","STOPPING")) { "正在录音，先停止录音再删除" }
+        val paths=audio.chunks(sessionId).map { it.filePath }+listOfNotNull(session.sourcePath)
         database.withTransaction {
             dao.detachConfirmedTasks(sessionId); dao.deleteCandidates(sessionId)
             dao.deleteJobs(sessionId); dao.deleteTopics(sessionId); dao.deleteNote(sessionId); dao.deleteMarks(sessionId)
             dao.deleteTranscripts(sessionId); audio.deleteSessionChunks(sessionId); dao.deleteSession(sessionId)
         }
+        paths.distinct().forEach { deleteOwnedAudio(it) }
+        File(context.filesDir,"import_chunks").listFiles { f -> f.name.startsWith("${sessionId}_") }?.forEach { it.delete() }
+        File(context.cacheDir,"meeting-$sessionId.wav").delete()
     }
 
-    private fun deleteOwnedAudio(path: String) {
-        if(path.isBlank()) return
+    /** Deletes [path] when it lies inside the app files; true when it is gone afterwards. */
+    private fun deleteOwnedAudio(path: String): Boolean {
+        if(path.isBlank()) return true
         val file=File(path).canonicalFile
         val root=context.filesDir.canonicalFile
-        if(file.path.startsWith(root.path+File.separator) && file.exists()) check(file.delete()) { "音频清理失败" }
+        if(!file.path.startsWith(root.path+File.separator) || !file.exists()) return true
+        return file.delete()
     }
 
     suspend fun daySources(date: LocalDate, zone: ZoneId = ZoneId.systemDefault()): List<SourceText> =

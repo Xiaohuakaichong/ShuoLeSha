@@ -92,9 +92,35 @@ class DetailViewModel(app:AppContainer,private val sessionId:String,private val 
                 app.repository.dao.sourcesForSession(sessionId),key.tasks,false,
                 key.chunks.associate { it.id to segments[it.id] },app.repository.dao.marksForSession(sessionId))
         } } } }
+    /** v5.2: step-by-step processing progress of this record (null when no audio was recorded). */
+    val progress=combine(app.repository.snapshots,app.preferences.outboundConsented) { snap,consented ->
+        snap.sessions.find { it.id==sessionId }?.let { session ->
+            val chunks=snap.chunks.filter { it.sessionId==sessionId }
+            val ids=chunks.mapTo(HashSet()) { it.id }
+            val transcribed=snap.transcripts.asSequence().map { it.chunkId }.filter { it in ids }.toHashSet()
+            val jobs=snap.jobs.associateBy { it.id }
+            com.example.shuolesa.ui.logic.ProgressLogic.of(session,chunks,transcribed,jobs::get,consented)
+        }
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),null)
+    fun retrySession()=work { app.repository.retrySession(sessionId);app.processing.requestProcessing();message.value="已重新加入处理队列" }
     fun regenerate()=work { app.repository.queueDerive(sessionId,true);app.processing.requestProcessing();message.value="已开始重新整理，原话和已确认待办会保留" }
     fun hideTopic()=work { topicId?.let { app.repository.dao.setTopicHidden(it,true) };message.value="已从记忆列表移除，原话和原音仍保留" }
-    fun delete(onDone:()->Unit)=work { app.processing.mutateSession {app.repository.deleteSession(sessionId)};withContext(Dispatchers.Main) { onDone() } }
+    /**
+     * v5.2: 删除整条记录. It used to wait for the processing queue lock, which a long upload holds for minutes, and it ran
+     * on this page scope, so leaving the page cancelled it and the record stayed. Now the running job for this record is
+     * cancelled, the rows go at once, and the work runs on the app scope; the result is reported on the home screen.
+     * Returns false (and says why) when it cannot start.
+     */
+    fun delete():Boolean {
+        val s=detail.value.session
+        if(s!=null && s.captureState in listOf("STARTING","RECORDING","PAUSED","STOPPING")) { message.value="正在录音，先停止录音再删除";return false }
+        app.scope.launch {
+            try { app.processing.deleteSession(sessionId);app.homeMessage.value="已删除这条记录" }
+            catch(e:CancellationException) { throw e }
+            catch(e:Exception) { app.homeMessage.value="删除没有完成：${e.message?.take(80) ?: "请重试"}" }
+        }
+        return true
+    }
     fun cleanAudio()=work { app.processing.mutateSession {app.repository.cleanAudio(sessionId)};message.value="原音已清理，文字和待办仍保留" }
     /** v4.2 要点页: confirm / ignore / complete a 待办 right where it was found (same rules as the 待办 page). */
     fun transition(task:TaskEntity,next:String)=work {
@@ -213,15 +239,20 @@ class SettingsViewModel(app:AppContainer):FeatureViewModel(app) {
     fun restoreAllHints()=work { app.preferences.clearAllHintDismissals();message.value="已恢复" }
     fun recordMode(mode:String)=work { app.preferences.setRecordingMode(mode) }
     fun haptic(value:Boolean)=work { app.preferences.setHapticEnabled(value) }
+    fun liveCaptions(value:Boolean)=work { app.preferences.setLiveCaptions(value) }
     fun autoResume(value:Boolean)=work { app.preferences.setAutoResumeAfterCall(value) }
     fun launchStrategy(value:String)=work { app.preferences.setLaunchStrategy(value) }
     fun bitrate(value:Int)=work { app.preferences.setLifelogBitrateKbps(value) }
     fun meetingFormat(value:String)=work { app.preferences.setMeetingFormat(if(value=="aac") "aac_64k" else value) }
     fun blindDuration(mode:String,value:Int)=work { if(mode=="lifelog") app.preferences.setLifelogTriggerDuration(value) else app.preferences.setMeetingTriggerDuration(value) }
     fun export(uri:Uri)=work { BackupMemory(app)(uri);message.value="备份已导出，包含记忆库和原音，不含服务密钥" }
-    fun clearAllAudio()=work { app.processing.mutateSession {snapshot.value.sessions.forEach { session ->
-        if(session.captureState !in listOf("STARTING","RECORDING","PAUSED","STOPPING")) app.repository.cleanAudio(session.id)
-    }};message.value="已清理结束会话的原音，文字和待办已保留" }
+    /** v5.2: one record that can't be cleaned (not transcribed yet) no longer stops the rest; it is kept and counted. */
+    fun clearAllAudio()=work { var kept=0
+        app.processing.mutateSession { snapshot.value.sessions.forEach { session ->
+            if(session.captureState in listOf("STARTING","RECORDING","PAUSED","STOPPING")) return@forEach
+            if(runCatching { app.repository.cleanAudio(session.id) }.isFailure) kept++
+        } }
+        message.value=if(kept==0) "已清理结束会话的原音，文字和待办已保留" else "已清理原音；$kept 条还没转写完，原音先保留" }
 }
 fun <T:ViewModel> factory(create:()->T)=object:ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST") override fun <V:ViewModel> create(modelClass:Class<V>):V=create() as V

@@ -62,10 +62,17 @@ class AudioCaptureService: Service() {
     private var startedAt=0L
     private var finishing=false
     private var pausedForCall=false
+    /** v5.2: live captions of the current recording, and the chronometer base its notification uses. */
+    @Volatile private var captioner: com.example.shuolesa.network.LiveCaptioner?=null
+    private var chronoBase=0L
     override fun onBind(intent: Intent?): IBinder?=null
     override fun onCreate() { super.onCreate();notifications=NotificationHelper(this)
         // v5.0: the 录音条 widget follows the recording (start / pause / resume / stop).
-        scope.launch { snapshot.map { it.phase }.distinctUntilChanged().collect { com.example.shuolesa.widget.Widgets.refreshRecording(this@AudioCaptureService) } } }
+        scope.launch { snapshot.map { it.phase }.distinctUntilChanged().collect { com.example.shuolesa.widget.Widgets.refreshRecording(this@AudioCaptureService) } }
+        // v5.2: the newest caption sentence goes into the recording notification (and so into 流体云), at most every 1.5 s
+        scope.launch { com.example.shuolesa.network.LiveCaptioner.state.map { it.lines.lastOrNull() }.distinctUntilChanged().collect { line ->
+            if(line!=null && snapshot.value.phase==CapturePhase.RECORDING) { notifications.updateRecording(chronoBase,snapshot.value.modeLabel,false,line);delay(1_500) }
+        } } }
 
     override fun onStartCommand(intent: Intent?,flags: Int,startId: Int): Int {
         when(intent?.action) {
@@ -116,6 +123,7 @@ class AudioCaptureService: Service() {
             app.repository.createSession(RecordingSessionEntity(id,mode,startedAt,title=if(mode=="meeting") "会议录音" else "随身记录",captureState="STARTING"))
             chunks=ChunkManager(this,app.repository,id,mode,prefs.lifelogBitrateKbps.first(),prefs.meetingFormat.first())
             snapshot.value=CaptureState(CapturePhase.STARTING,id,mode)
+            captioner=com.example.shuolesa.network.LiveCaptioner(app,scope).also { it.reset() }
             // v4.1-a: call detection via AudioManager mode; no READ_PHONE_STATE needed.
             withContext(Dispatchers.Main) {
                 phone=PhoneStateMonitor(this@AudioCaptureService).also { monitor -> monitor.start(object: PhoneStateMonitor.PhoneStateCallback {
@@ -143,7 +151,9 @@ class AudioCaptureService: Service() {
         val baseDurationMs=manager.durationMs
         app.repository.dao.updateCapture(manager.sessionId,"RECORDING",null,manager.durationMs)
         snapshot.value=snapshot.value.copy(phase=CapturePhase.RECORDING,error=null)
-        withContext(Dispatchers.Main) { notifications.updateRecording(System.currentTimeMillis()-manager.durationMs,snapshot.value.modeLabel) }
+        chronoBase=System.currentTimeMillis()-manager.durationMs
+        withContext(Dispatchers.Main) { notifications.updateRecording(chronoBase,snapshot.value.modeLabel) }
+        captioner?.begin()
         val power=getSystemService(PowerManager::class.java)
         wake=power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"shuolesha:recording").apply { setReferenceCounted(false);acquire(600_000) }
         renewal=scope.launch { while(isActive) { delay(300_000);wake?.acquire(600_000) } }
@@ -155,6 +165,7 @@ class AudioCaptureService: Service() {
             try {
                 queue.run { pcm,count ->
                     manager.onPcmFrame(pcm,count)
+                    captioner?.feed(pcm,count)
                     val now=System.currentTimeMillis()
                     if(now-checkedAt>60_000) { check(StorageChecker(this@AudioCaptureService).hasEnoughStorage(25)) { "存储空间不足，已停止并保留录音" };checkedAt=now }
                     if(manager.savedChunks>lastSaved) { lastSaved=manager.savedChunks;app.processing.requestProcessing() }
@@ -202,7 +213,7 @@ class AudioCaptureService: Service() {
     private suspend fun pause() {
         if(snapshot.value.phase!=CapturePhase.RECORDING) return
         try {
-            joinCapture();chunks?.closeChunk()
+            joinCapture();chunks?.closeChunk();captioner?.end()
             val manager=chunks ?: return
             snapshot.value=snapshot.value.copy(phase=CapturePhase.PAUSED,durationMs=manager.durationMs,savedChunks=manager.savedChunks,level=0f)
             app.repository.dao.updateCapture(manager.sessionId,"PAUSED",null,manager.durationMs)
@@ -231,6 +242,7 @@ class AudioCaptureService: Service() {
         val manager=chunks
         var error=reason
         snapshot.update { it.copy(phase=CapturePhase.STOPPING,level=0f) }
+        captioner?.end();captioner=null
         try {
             joinCapture()
             manager?.closeChunk()

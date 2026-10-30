@@ -47,7 +47,8 @@ class NotificationHelper(private val context: Context) {
         manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
     }
 
-    fun buildRecordingNotification(startedAt: Long, modeTitle: String, paused:Boolean=false): Notification {
+    /** v5.2: [caption] = the latest live-caption sentence, shown instead of the generic line while recording. */
+    fun buildRecordingNotification(startedAt: Long, modeTitle: String, paused:Boolean=false, caption:String?=null): Notification {
         val contentIntent = PendingIntent.getActivity(
             context,
             0,
@@ -76,10 +77,10 @@ class NotificationHelper(private val context: Context) {
         },PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("说了啥 · $label")
-            .setContentText(if(paused) "已暂停" else "正在听")
+            .setContentText(if(paused) "已暂停" else caption ?: "正在听")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText(if(paused) "录音已暂停。可继续录音或停止并保存。" else "正在录音。听到重点可点「标记」，之后在原话里直接找到。"),
+                    .bigText(if(paused) "录音已暂停。可继续录音或停止并保存。" else caption?.let { "“$it”" } ?: "正在录音。听到重点可点「标记」，之后在原话里直接找到。"),
             )
             .setSmallIcon(R.drawable.ic_notify_ceer)
             .setOngoing(true)
@@ -99,8 +100,8 @@ class NotificationHelper(private val context: Context) {
             .build()
     }
 
-    fun updateRecording(startedAt: Long, modeTitle: String,paused:Boolean=false) {
+    fun updateRecording(startedAt: Long, modeTitle: String,paused:Boolean=false,caption:String?=null) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildRecordingNotification(startedAt, modeTitle,paused))
+        manager.notify(NOTIFICATION_ID, buildRecordingNotification(startedAt, modeTitle,paused,caption))
     }
 }

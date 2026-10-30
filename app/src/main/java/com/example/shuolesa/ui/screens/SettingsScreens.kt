@@ -114,6 +114,12 @@ import com.example.shuolesa.util.PermissionHelper
                         Meta("原音一直保留在本机，只有手动清理时才删除。")
                     } }
                     item { Panel {
+                        val captions by vm.preferences.liveCaptions.collectAsStateWithLifecycle(true)
+                        SectionTitle("实时字幕")
+                        Toggle("录音时显示文字",captions,vm::liveCaptions)
+                        Meta("需要已同意数据外发、设置好转写服务。阿里云百炼会边说边出字；其他服务每隔几秒上传一小段，没有声音的部分不上传。字幕只是预览，保存的原话仍以录完后的转写为准。会额外消耗一些转写额度。")
+                    } }
+                    item { Panel {
                         val haptic by vm.preferences.hapticEnabled.collectAsStateWithLifecycle(true)
                         val resume by vm.preferences.autoResumeAfterCall.collectAsStateWithLifecycle(false)
                         SectionTitle("反馈与来电")

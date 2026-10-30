@@ -46,6 +46,22 @@ class ProcessingCoordinator(private val context: Context,private val repository:
     /** Called by UploadWorker when its work ends without a retry, so a job that is pending again gets new work. */
     fun onDurableWorkFinished(jobId: String) { scheduled.remove(jobId) }
     suspend fun <T> mutateSession(block:suspend ()->T):T=serial.withLock {block()}
+    /** v5.2: record id -> the job body working on it right now, so deleting the record can stop the upload. */
+    private val inFlight=ConcurrentHashMap<String,Deferred<Unit>>()
+    /**
+     * v5.2: deletes a record without waiting for the queue. A job still running for it is cancelled; anything it would
+     * still write is a no-op (each writer re-checks that the session exists, see MemoryRepository).
+     */
+    suspend fun deleteSession(sessionId: String) {
+        inFlight[sessionId]?.cancel()
+        repository.deleteSession(sessionId)
+        requestProcessing()
+    }
+    private suspend fun sessionOf(job: ProcessingJobEntity): String? = when(job.kind) {
+        "DERIVE","IMPORT" -> job.subjectId
+        "ASR","MAP" -> repository.audio.getById(job.subjectId.toLongOrNull() ?: -1)?.sessionId
+        else -> null
+    }
 
     /**
      * v4.1-a P0-2: WAITING_CONFIG jobs are retried on app foreground / network change, at most once
@@ -168,13 +184,24 @@ class ProcessingCoordinator(private val context: Context,private val repository:
                 updateSessionForJob(job,"WAITING_CONFIG",ProcessingReason.KEY_MISSING.encode("还没填${which}密钥，填好后会自动继续"))
                 return@withLock true
             }
-            when(job.kind) {
-                "IMPORT" -> AudioImporter(context,repository).prepare(job.subjectId)
-                "ASR" -> transcribe(job,config)
-                "MAP" -> map(job,config)
-                "DERIVE" -> derive(job,config)
-                "DIGEST" -> digest(job,config)
+            val sessionId=sessionOf(job)
+            val deleted=supervisorScope {
+                val body=async {
+                    when(job.kind) {
+                        "IMPORT" -> AudioImporter(context,repository).prepare(job.subjectId)
+                        "ASR" -> transcribe(job,config)
+                        "MAP" -> map(job,config)
+                        "DERIVE" -> derive(job,config)
+                        "DIGEST" -> digest(job,config)
+                    }
+                }
+                sessionId?.let { inFlight[it]=body }
+                try { body.await();false }
+                // only the body was cancelled (its record is being deleted), not this runner
+                catch(e: CancellationException) { if(body.isCancelled && currentCoroutineContext().isActive) true else throw e }
+                finally { sessionId?.let { inFlight.remove(it,body) } }
             }
+            if(deleted) { repository.dao.finishJob(id,owner,"PENDING",null,0,System.currentTimeMillis());return@withLock true }
             repository.dao.finishJob(id,owner,"COMPLETE",null,0,System.currentTimeMillis())
             if(job.kind=="MAP") repository.dao.wakeDependencies()
             if(job.kind=="IMPORT") repository.queueDerive(job.subjectId)

@@ -1,5 +1,6 @@
 package com.example.shuolesa.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -54,9 +55,11 @@ import com.example.shuolesa.ui.logic.*
 data class SegmentUi(val chunkId:Long,val index:Int,val header:String,val text:String,val view:SegmentView,val base:Long,val provenance:String)
 data class Focus(val chunkId:Long,val start:Int,val end:Int)
 
-@Composable fun DetailScreen(vm:DetailViewModel,player:PlaybackViewModel,onBack:()->Unit,onSource:(EvidenceRef)->Unit,onAsk:()->Unit,focus:Focus?=null) {
+@Composable fun DetailScreen(vm:DetailViewModel,player:PlaybackViewModel,onBack:()->Unit,onSource:(EvidenceRef)->Unit,onAsk:()->Unit,focus:Focus?=null,
+    onFixService:()->Unit={},onConsent:()->Unit={}) {
     DisposableEffect(player) {onDispose {player.deactivate()}}
     val state by vm.detail.collectAsStateWithLifecycle();val busy by vm.busy.collectAsStateWithLifecycle()
+    val progress by vm.progress.collectAsStateWithLifecycle()
     val playback by player.state.collectAsStateWithLifecycle()
     val capture by AudioCaptureService.state.collectAsStateWithLifecycle()
     var rawTab by rememberSaveable { mutableStateOf(focus!=null) }
@@ -147,7 +150,7 @@ data class Focus(val chunkId:Long,val start:Int,val end:Int)
             onSeek={player.seek(it)}) }) { padding ->
         DetailContent(Modifier.padding(padding),state,rawTab,{rawTab=it},segments,rows,speakers,slots,share,filter,{speakerFilter=it},names,
             current,follow && playback.playing,focus,{ ref -> TranscriptLayout.refLabel(transcript,names,ref) },
-            onSource=onSource,onAsk=onAsk,onRetry={vm.retry()},
+            onSource=onSource,onAsk=onAsk,onRetry={vm.retrySession()},progress=progress,onFixService=onFixService,onConsent=onConsent,
             onPlaySentence={ id,i -> segments.find { it.chunkId==id }?.let { s -> playFrom(s,SegmentPlayback.seekFor(s.view,i,s.base)) } },
             onPlaySegment={ id -> segments.find { it.chunkId==id }?.let { s -> playFrom(s,s.base) } },
             onPlayMark={ id,at -> segments.find { it.chunkId==id }?.let { s -> playFrom(s,s.base+MarkLayout.seekFor(at)) } },
@@ -167,7 +170,7 @@ data class Focus(val chunkId:Long,val start:Int,val end:Int)
         confirmButton={TextButton(onClick={askPause=null;action()}) { Text("暂停并回听") }},dismissButton={TextButton(onClick={askPause=null}) { Text("取消") }}) }
     confirm?.let { kind -> AlertDialog(onDismissRequest={confirm=null},title={Text(when(kind){"hide"->"移除要点卡";"audio"->"清理原音";else->"删除整条记录"})},
         text={Text(when(kind){"hide"->"只隐藏这张卡。原话、原音和待办都保留。";"audio"->"本机原音会被删除，原话和待办保留。清理后无法回听。";else->"删除这条记录的原音、原话和候选待办。已确认的待办保留，并标记来源已删除。无法撤销。"})},
-        confirmButton={TextButton(onClick={confirm=null;when(kind){"hide"->{vm.hideTopic();onBack()};"audio"->vm.cleanAudio();else->vm.delete(onBack)}}) {Text("确认")}},dismissButton={TextButton(onClick={confirm=null}) {Text("取消")}}) }
+        confirmButton={TextButton(onClick={confirm=null;when(kind){"hide"->{vm.hideTopic();onBack()};"audio"->vm.cleanAudio();else->if(vm.delete()) onBack()}}) {Text("确认")}},dismissButton={TextButton(onClick={confirm=null}) {Text("取消")}}) }
 }
 
 /** v4.2: speaker colours (text, tint) by slot; lighter on the dark theme so names stay readable on both. */
@@ -186,12 +189,15 @@ fun avatarText(label:String)=label.removePrefix("说话人").trim().take(1).ifBl
     filter:String?,onFilter:(String?)->Unit,names:Map<String,String>,playing:Pair<Long,Int>?,follow:Boolean,focus:Focus?,
     refLabel:(EvidenceRef)->String,onSource:(EvidenceRef)->Unit,onAsk:()->Unit,onRetry:()->Unit,
     onPlaySentence:(Long,Int)->Unit,onPlaySegment:(Long)->Unit,onPlayMark:(Long,Long)->Unit,
-    onSpeaker:(String,String)->Unit,onTask:(TaskEntity,String)->Unit) {
+    onSpeaker:(String,String)->Unit,onTask:(TaskEntity,String)->Unit,
+    progress:com.example.shuolesa.ui.logic.ProcessingProgress?=null,onFixService:()->Unit={},onConsent:()->Unit={}) {
     val list=rememberLazyListState()
+    // v5.2: while a record is being processed, a step-by-step progress card sits above both tabs
+    val showProgress=progress!=null && !progress.finished
     val policy=remember { FollowPolicy() }
     val byId=remember(segments) { segments.associateBy { it.chunkId } }
     val segmentScoped=remember(segments,speakers) { speakers.isEmpty() && segments.any { s -> s.view.sentences.any { it.speaker!=null && !it.sessionScoped } } }
-    val headerItems=2+(if(rawTab && speakers.isNotEmpty()) 1 else 0)+(if(rawTab && segmentScoped) 1 else 0)
+    val headerItems=2+(if(showProgress) 1 else 0)+(if(rawTab && speakers.isNotEmpty()) 1 else 0)+(if(rawTab && segmentScoped) 1 else 0)
     val quote=remember(focus,segments) { focus?.let { f -> byId[f.chunkId]?.let { s -> SegmentPlayback.sentenceForQuote(s.view,s.text,f.start)?.let { f.chunkId to it } } } }
     var quoteShown by remember { mutableStateOf(false) }
     LaunchedEffect(list.isScrollInProgress) { if(list.isScrollInProgress) policy.onUserScroll(System.currentTimeMillis()) }
@@ -206,6 +212,7 @@ fun avatarText(label:String)=label.removePrefix("说话人").trim().take(1).ifBl
         item { Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Meta("${dateLabel(session.startedAt)} ${clock(session.startedAt)} · ${if(session.mode=="meeting") "会议" else "随身"} · ${humanDuration(session.durationMs)}${if(speakers.isNotEmpty()) " · ${speakers.size} 人" else ""}",Modifier.weight(1f,fill=false))
             StatusPill(UiStatus.of(session.captureState,session.processingState)) } }
+        if(showProgress) item(key="progress") { ProcessingCard(progress!!,onRetry=onRetry,onFixService=onFixService,onConsent=onConsent) }
         item { Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
             SegmentedTabs(listOf("要点","原话"),if(rawTab) 1 else 0,{ onTab(it==1) },Modifier.weight(1f))
             FilledTonalButton(onClick=onAsk,contentPadding=PaddingValues(horizontal=14.dp),modifier=Modifier.height(44.dp)) {
@@ -214,7 +221,7 @@ fun avatarText(label:String)=label.removePrefix("说话人").trim().take(1).ifBl
             val body=state.topic?.summary ?: state.note?.summary
             if(body!=null) item { Panel { SectionTitle("要点 · AI 生成");Text(body,style=MaterialTheme.typography.bodyLarge)
                 if(share.isNotEmpty()) { Spacer(Modifier.height(4.dp));Meta("发言占比");SpeakerShareBar(share,names) } } }
-            else item { Panel { Text("原音已保存",style=MaterialTheme.typography.titleMedium);Meta(ProcessingReason.message(session.error) ?: "转写和整理完成后，要点会出现在这里。")
+            else if(!showProgress) item { Panel { Text("原音已保存",style=MaterialTheme.typography.titleMedium);Meta(ProcessingReason.message(session.error) ?: "转写和整理完成后，要点会出现在这里。")
                 TextButton(onClick=onRetry) { Text("重试") } } }
             val candidates=state.tasks.count { it.state==TaskState.CANDIDATE }
             if(state.tasks.isNotEmpty()) item { SectionTitle(if(candidates>0) "待办 · $candidates 项待确认" else "待办") }
@@ -403,11 +410,12 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
 /// ---------------- ⑤ 录音页：深色舞台，一个主按钮 ----------------
 @Composable fun CaptureScreen(state:CaptureState,onBack:()->Unit,onCommand:(String)->Unit,transcribed:Int=0,onStopped:()->Unit={},recent:String?=null) {
     val samples=remember { mutableStateListOf<Float>() }
+    val captions by com.example.shuolesa.network.LiveCaptioner.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.level,state.durationMs) { if(state.phase==CapturePhase.RECORDING) { samples.add(state.level);if(samples.size>48) samples.removeAt(0) } }
     CaptureContent(state,samples,transcribed,onBack,
         onPauseResume={onCommand(if(state.phase==CapturePhase.PAUSED) AudioCaptureService.ACTION_RESUME else AudioCaptureService.ACTION_PAUSE)},
         onStop={onCommand(AudioCaptureService.ACTION_STOP);onStopped()},
-        recent=recent,onMark={onCommand(AudioCaptureService.ACTION_MARK)})
+        recent=recent,onMark={onCommand(AudioCaptureService.ACTION_MARK)},captions=captions)
 }
 
 /**
@@ -416,7 +424,7 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
  * v4.2: [recent] = the latest 原话 of this recording (随身 transcribes while recording); [onMark] = 标记刚才这句.
  */
 @Composable fun CaptureContent(state:CaptureState,samples:List<Float>,transcribed:Int,onBack:()->Unit,onPauseResume:()->Unit,onStop:()->Unit,
-    recent:String?=null,onMark:()->Unit={}) {
+    recent:String?=null,onMark:()->Unit={},captions:com.example.shuolesa.network.LiveCaption?=null) {
     com.example.shuolesa.theme.ShuoLeSaTheme(darkTheme=true) {
         StageSystemBars()
         val brand=com.example.shuolesa.theme.LocalBrandColors.current
@@ -433,7 +441,8 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
             Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) {
               Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally) {
                 val pose=when(phase){CapturePhase.RECORDING->CeerPose.LISTENING;CapturePhase.PAUSED->CeerPose.PAUSED;CapturePhase.ERROR->CeerPose.ERROR;CapturePhase.IDLE->CeerPose.SUCCESS;else->CeerPose.THINKING}
-                CaptureOrb(pose,state.level,recording,small=recent!=null || state.marks.isNotEmpty())
+                val captioning=captions?.showing==true
+                CaptureOrb(pose,state.level,recording,small=captioning || recent!=null || state.marks.isNotEmpty())
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(when { recording->brand.record;paused->brand.onStageMuted;else->Color.Transparent }))
                     Text(when(phase){CapturePhase.STARTING->"准备录音";CapturePhase.RECORDING->"正在听";CapturePhase.PAUSED->"已暂停";CapturePhase.STOPPING->"正在保存";CapturePhase.ERROR->"录音已中断";else->"原音已保存"},
@@ -448,7 +457,10 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
                 Text("已保存 ${state.savedChunks} 个片段 · 已转写 $transcribed 个",style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted)
                 Text("原音保存在手机里，收起后继续录",style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted)
                 state.error?.let { Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=12.dp)) }
-                recent?.let { text -> Spacer(Modifier.height(16.dp))
+                captions?.note?.let { Text(it,Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall,color=brand.onStageMuted,textAlign=androidx.compose.ui.text.style.TextAlign.Center) }
+                // v5.2: live captions while recording; without them, the newest 片段 原话 as before
+                if(captioning) { Spacer(Modifier.height(16.dp));CaptionPanel(captions!!) }
+                else recent?.let { text -> Spacer(Modifier.height(16.dp))
                     Surface(Modifier.fillMaxWidth(),shape=MaterialTheme.shapes.large,color=brand.stageRaised) {
                         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                             Text("最近转写",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
@@ -472,6 +484,23 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
     }
 }
 
+/** v5.2: the last few caption sentences, the unfinished one dimmed; newest at the bottom. */
+@Composable private fun CaptionPanel(c:com.example.shuolesa.network.LiveCaption) {
+    val brand=com.example.shuolesa.theme.LocalBrandColors.current
+    Surface(Modifier.fillMaxWidth(),shape=MaterialTheme.shapes.large,color=brand.stageRaised) {
+        Column(Modifier.fillMaxWidth().padding(16.dp).animateContentSize(),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(if(c.mode==com.example.shuolesa.network.CaptionMode.REALTIME) MaterialTheme.colorScheme.primary else brand.onStageMuted))
+                Text("实时字幕",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
+                Text(when(c.mode) { com.example.shuolesa.network.CaptionMode.CONNECTING->"· 连接中";com.example.shuolesa.network.CaptionMode.REALTIME->"· 边说边出";
+                    com.example.shuolesa.network.CaptionMode.CHUNKED->"· 每隔几秒更新";else->"" },style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
+            }
+            if(c.lines.isEmpty() && c.partial.isBlank()) Text("说话后，文字会出现在这里",style=MaterialTheme.typography.bodyMedium,color=brand.onStageMuted)
+            c.lines.takeLast(3).forEach { Text(it,style=MaterialTheme.typography.bodyLarge,color=brand.onStage) }
+            if(c.partial.isNotBlank()) Text(c.partial,style=MaterialTheme.typography.bodyLarge,color=brand.onStageMuted)
+        }
+    }
+}
 @Composable private fun CaptureOrb(pose:CeerPose,level:Float,live:Boolean,small:Boolean) {
     val primary=MaterialTheme.colorScheme.primary
     val brand=com.example.shuolesa.theme.LocalBrandColors.current

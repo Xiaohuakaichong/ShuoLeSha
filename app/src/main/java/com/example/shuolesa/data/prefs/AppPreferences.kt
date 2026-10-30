@@ -155,6 +155,8 @@ class AppPreferences(private val context: Context,private val testStore: android
         private val LLM_BASE=stringPreferencesKey("llm_base_url")
         // v5.0: the implicit StepFun default is gone; installs that relied on it get it written down once.
         private val EXPLICIT_PROVIDER=booleanPreferencesKey("v50_explicit_provider")
+        // v5.2: show text while recording (network/LiveCaptions)
+        private val LIVE_CAPTIONS=booleanPreferencesKey("live_captions")
         private fun providerCredential(provider: String)=stringPreferencesKey("credential_provider_$provider")
         fun normalizeBase(base: String)=base.trim().toHttpUrlOrNull()?.toString()?.trimEnd('/') ?: base.trim().trimEnd('/')
         /** v4.3: the addresses in a consent target ([AiSettings.outboundTarget]), 转写 first. */
@@ -210,6 +212,8 @@ class AppPreferences(private val context: Context,private val testStore: android
     val lifelogTriggerDuration=flow(LIFE_TRIGGER,2)
     val meetingTriggerDuration=flow(MEETING_TRIGGER,4)
     val keepLocalAudio=flow(KEEP,true)
+    val liveCaptions=flow(LIVE_CAPTIONS,true)
+    suspend fun setLiveCaptions(value: Boolean)=set(LIVE_CAPTIONS,value)
 
     suspend fun initialize() {
         store.edit { p ->
