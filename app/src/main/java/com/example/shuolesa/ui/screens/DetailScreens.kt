@@ -124,7 +124,7 @@ data class Focus(val chunkId:Long,val start:Int,val end:Int)
         if(imported || seg.chunkId==segment?.chunkId) { chunkId=seg.chunkId;player.seek(seg.base);return }
         pendingSeek=seg.base;continuePlay=playback.playing;chunkId=seg.chunkId
     }
-    val title=state.topic?.title ?: state.note?.title ?: state.session?.title ?: "记录详情"
+    val title=state.topic?.title ?: state.note?.title?.takeUnless { it=="处理失败" } ?: state.session?.displayTitle() ?: "记录详情"
     /** v4.2 导出原话: plain text with times, speaker names and marks, handed to the system share sheet. */
     fun exportTranscript() {
         val s=state.session ?: return
@@ -534,7 +534,7 @@ fun speedLabel(speed:Float)=when(speed) { 1f->"1×";1.5f->"1.5×";2f->"2×";else
 @Composable private fun StopButton(enabled:Boolean,onClick:()->Unit) {
     val brand=com.example.shuolesa.theme.LocalBrandColors.current
     Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Surface(onClick=onClick,enabled=enabled,shape=CircleShape,color=brand.record,modifier=Modifier.size(84.dp)) {
+        Surface(onClick=onClick,enabled=enabled,shape=CircleShape,color=brand.record,modifier=Modifier.size(84.dp).semantics { contentDescription="停止并整理" }) {
             Box(contentAlignment=Alignment.Center) { Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(brand.onRecord)) } }
         Text("停止并整理",style=MaterialTheme.typography.labelMedium,color=brand.onStageMuted)
     }

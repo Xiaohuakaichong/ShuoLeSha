@@ -163,7 +163,7 @@ data class TodayUi(val date:LocalDate,val isToday:Boolean,val digest:String?,val
             items(ui.cards,key={it.key}) { card -> MemoryCardView(card) { onOpen(card.sessionId,card.topicId) } } }
     }
 }
-fun humanDuration(ms:Long):String { val m=ms/60000;return if(m>=60) "${m/60} 小时 ${m%60} 分" else "$m 分钟" }
+fun humanDuration(ms:Long):String { val m=ms/60000;return if(m>=60) "${m/60} 小时 ${m%60} 分" else if(m>0) "$m 分钟" else "${ms/1000} 秒" }
 
 // ---------------- 待办（候选角标在底栏） ----------------
 @Composable fun TasksScreen(vm:TasksViewModel,onSource:(EvidenceRef)->Unit) {

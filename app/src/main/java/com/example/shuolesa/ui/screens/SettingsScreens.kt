@@ -47,7 +47,7 @@ import com.example.shuolesa.util.PermissionHelper
         LazyColumn(Modifier.padding(padding).fillMaxSize(),contentPadding=PaddingValues(20.dp,8.dp,20.dp,32.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             when(page) {
                 "home"->{
-                    item { Panel(color=MaterialTheme.colorScheme.primaryContainer) { Row(verticalAlignment=Alignment.CenterVertically) {
+                    item { Panel(Modifier.fillMaxWidth(),color=MaterialTheme.colorScheme.primaryContainer) { Row(verticalAlignment=Alignment.CenterVertically) {
                         Ceer(CeerPose.IDLE,Modifier.size(84.dp),interactive=true)
                         Column(Modifier.padding(start=16.dp)) {
                             Text("说了啥",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onPrimaryContainer)

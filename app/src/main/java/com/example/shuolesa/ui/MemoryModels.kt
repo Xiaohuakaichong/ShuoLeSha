@@ -30,8 +30,9 @@ fun MemorySnapshot.cards(consented:Boolean=true):List<MemoryCard> {
     val chunksBySession=chunks.groupBy { it.sessionId }
     val jobsById=jobs.associateBy { it.id }
     return sessions.flatMap { session ->
-        val note=notesBySession[session.id]
-        val own=topicsBySession[session.id].orEmpty()
+        // v5.2: v3 stored a failed run as a note titled 处理失败 (summary = raw service error); show the record and its progress instead
+        val note=notesBySession[session.id]?.takeUnless { it.title=="处理失败" }
+        val own=topicsBySession[session.id].orEmpty().filter { it.title!="处理失败" }
         val revision=note?.sourceRevision ?: own.maxOfOrNull { it.revision }
         val visible=own.filter { revision==null || it.revision==revision }
         val legacy=session.id in legacySessions
@@ -51,10 +52,13 @@ fun MemorySnapshot.cards(consented:Boolean=true):List<MemoryCard> {
                     session.durationMs,status,count,legacy,transcribed,total,progress?.fraction,progress?.headline)
             }
         } else if(session.mode=="lifelog" && session.processingState=="READY" && revision!=null && EvidenceRef.fromJson(note?.sourcesJson).isNotEmpty()) emptyList()
-        else listOf(MemoryCard(session.id,session.id,null,note?.title ?: session.title,note?.summary ?: "",
+        else listOf(MemoryCard(session.id,session.id,null,note?.title ?: session.displayTitle(),note?.summary ?: "",
             session.startedAt,session.mode,session.durationMs,status,sessionCandidates.size,legacy,transcribed,total,progress?.fraction,progress?.headline))
     }.sortedByDescending { it.time }
 }
+
+/** v5.2.1: v3 renamed a record to 处理失败 when its processing failed; show what it is instead (the progress says why). */
+fun RecordingSessionEntity.displayTitle()=title.takeUnless { it=="处理失败" } ?: if(mode=="meeting") "会议录音" else "随身记录"
 
 fun clock(ms:Long)=DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 fun dateLabel(ms:Long)=DateTimeFormatter.ofPattern("M月d日").format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))

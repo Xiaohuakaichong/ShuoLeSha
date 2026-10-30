@@ -89,13 +89,13 @@ private val ScreenFade=ContentTransform(fadeIn(tween(220,easing=FastOutSlowInEas
     val settings:SettingsViewModel=viewModel(factory=factory {SettingsViewModel(app)})
     val snackbar=remember {SnackbarHostState()}
     // v4.1-a.1: one-shot home message, e.g. "已同意，点录音即可开始" after consenting from a shortcut.
-    val homeMessage by app.homeMessage.collectAsStateWithLifecycle()
-    LaunchedEffect(homeMessage) { homeMessage?.let { app.homeMessage.value=null;snackbar.showSnackbar(it) } }
+    // v5.2: collected, not keyed on the value: clearing the value used to restart the effect, which cancelled the
+    // snackbar it had just opened, so「已停止，正在整理」「已删除这条记录」 never showed.
+    LaunchedEffect(Unit) { app.homeMessage.collect { message -> if(message!=null) { app.homeMessage.value=null;snackbar.showSnackbar(message) } } }
     // v4.1-a.3: tile started recording while the app was open -> stay on this screen, top recording bar
     // (as on ⑤) + Snackbar "已开始录音" with "查看" opening ⑤.
-    val startedNotice by app.recordingStartedNotice.collectAsStateWithLifecycle()
-    LaunchedEffect(startedNotice) { if(startedNotice) { app.recordingStartedNotice.value=false
-        if(snackbar.showSnackbar("已开始录音",actionLabel="查看",duration=SnackbarDuration.Short)==SnackbarResult.ActionPerformed && stack.lastOrNull()!=Capture) stack.add(Capture) } }
+    LaunchedEffect(Unit) { app.recordingStartedNotice.collect { started -> if(started) { app.recordingStartedNotice.value=false
+        if(snackbar.showSnackbar("已开始录音",actionLabel="查看",duration=SnackbarDuration.Short)==SnackbarResult.ActionPerformed && stack.lastOrNull()!=Capture) stack.add(Capture) } } }
     // v5.0: the 快捷条 widget's 搜索 button.
     val searchRequested by app.requestedSearch.collectAsStateWithLifecycle()
     LaunchedEffect(searchRequested) { if(searchRequested) { app.requestedSearch.value=false;if(stack.lastOrNull() !is Recall) stack.add(Recall()) } }
@@ -155,7 +155,8 @@ private val ScreenFade=ContentTransform(fadeIn(tween(220,easing=FastOutSlowInEas
                     else->"${snap.tasks.count { it.state==TaskState.ACTIVE }} 项待办 · $candidates 项待确认"
                 }
                 val bg=MaterialTheme.colorScheme.background
-                Box(Modifier.fillMaxSize().background(bg)) {
+                // a Surface (not a bare Box) so text here gets onBackground; without it titles were black on the dark theme
+                Surface(Modifier.fillMaxSize(),color=bg) { Box(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().statusBarsPadding()) {
                         LargeHeader(title,subtitle) {
                             if(tab==0) RoundIconButton(Icons.Outlined.FileUpload,"导入音频",{importSheet=true},size=44.dp)
@@ -177,7 +178,7 @@ private val ScreenFade=ContentTransform(fadeIn(tween(220,easing=FastOutSlowInEas
                     HomeDock(tab,{tab=it},candidates,capture,openCapture,
                         {memory.command(if(capture.phase==CapturePhase.PAUSED) AudioCaptureService.ACTION_RESUME else AudioCaptureService.ACTION_PAUSE)},
                         Modifier.align(Alignment.BottomCenter))
-                }
+                } }
             }
             entry<Detail> { key ->
                 val vm:DetailViewModel=viewModel(key="detail:${key.id}:${key.topicId}",factory=factory {DetailViewModel(app,key.id,key.topicId)})
@@ -228,7 +229,8 @@ private val ScreenFade=ContentTransform(fadeIn(tween(220,easing=FastOutSlowInEas
                 }
             }
         })
-        SnackbarHost(snackbar,Modifier.align(Alignment.BottomCenter).padding(16.dp,16.dp,16.dp,100.dp)) { data -> Snackbar(data,shape=RoundedCornerShape(16.dp)) }
+        // above the home dock (60 dp + its padding) on top of whatever the navigation bar takes
+        SnackbarHost(snackbar,Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp,16.dp,16.dp,96.dp)) { data -> Snackbar(data,shape=RoundedCornerShape(16.dp)) }
     }
     }
     if(modeSheet || importSheet) ModeSheet(importSheet,{modeSheet=false;importSheet=false}) { selected ->
